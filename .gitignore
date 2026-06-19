@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# SECRETOS — nunca deben llegar a un repositorio remoto
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# Credenciales de OAuth descargadas de Google Cloud Console / Azure Portal
+client_secret*.json
+credentials.json
+token.json
+*.pem
+*.ppk
+*.key
+
+# ---------------------------------------------------------------------------
+# Node / NestJS / Next.js
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Python (workers)
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Prisma
+# ---------------------------------------------------------------------------
+# El cliente generado se reconstruye con `prisma generate`; no se versiona.
+backend/node_modules/.prisma/
+
+# ---------------------------------------------------------------------------
+# Artefactos generados en ejecución (PPTX, sitios HTML, etc.)
+# ---------------------------------------------------------------------------
+artifacts/
+workers/artifacts/
+backend/artifacts/
+
+# ---------------------------------------------------------------------------
+# Sistema operativo / editores
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
