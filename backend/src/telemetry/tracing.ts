@@ -8,9 +8,11 @@
  * cargó antes de llamar a `sdk.start()`, las instrumentaciones de
  * HTTP/Express no capturan nada.
  *
- * Por eso se carga con `node -r ./dist/telemetry/tracing.js dist/main.js`
- * (ver package.json, script `start`) en vez de importarse normalmente
- * dentro de main.ts.
+ * Por eso se carga con `node -r ./dist/src/telemetry/tracing.js dist/src/main`
+ * (ver package.json, script `start` — la ruta incluye `src/` porque
+ * nest-cli.json define sourceRoot: "src", y Nest preserva esa estructura
+ * de carpetas dentro de dist/, no la aplana) en vez de importarse
+ * normalmente dentro de main.ts.
  *
  * Exportador actual: consola (stdout), por decisión explícita para
  * este sprint — no hay backend de observabilidad externo todavía.
@@ -22,11 +24,11 @@
 const { NodeSDK } = require('@opentelemetry/sdk-node');
 const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
 const { ConsoleSpanExporter } = require('@opentelemetry/sdk-trace-base');
-const { resourceFromAttributes } = require('@opentelemetry/resources');
+const { Resource } = require('@opentelemetry/resources');
 const { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } = require('@opentelemetry/semantic-conventions');
 
 const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
+  resource: new Resource({
     [ATTR_SERVICE_NAME]: 'maestro-backend',
     [ATTR_SERVICE_VERSION]: '1.0.0',
   }),
