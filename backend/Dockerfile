@@ -12,7 +12,9 @@ RUN npm run build
 
 EXPOSE 4000
 
-# El entrypoint corre las migraciones, el seed, y arranca el server.
-# Esto es aceptable para desarrollo; en producción las migraciones
-# deberían correr como un paso separado de CI/CD (ver Sprint 5).
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && npm run start"]
+# Las migraciones SIEMPRE corren al desplegar (son idempotentes y
+# necesarias). El seed (usuario de prueba con ID fijo) solo corre si
+# RUN_SEED=true está explícito — útil en desarrollo local y en Railway
+# mientras no haya Firebase Auth real, pero no algo que se quiera
+# correr a ciegas en cada deploy de un entorno con usuarios reales.
+CMD ["sh", "-c", "npx prisma migrate deploy && ([ \"$RUN_SEED\" = \"true\" ] && npx prisma db seed || true) && npm run start"]

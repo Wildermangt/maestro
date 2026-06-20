@@ -67,6 +67,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       PORT: 4000
       ARTIFACTS_DIR: /app/artifacts
+      RUN_SEED: ${RUN_SEED:-false}
     volumes:
       - artifacts_data:/app/artifacts
     ports:
@@ -88,6 +89,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       QUEUE_NAME: tasks-queue
       QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}

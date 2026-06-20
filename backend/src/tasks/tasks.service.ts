@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { trace, propagation, context } from '@opentelemetry/api';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 
@@ -9,6 +10,7 @@ const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
+  private readonly tracer = trace.getTracer('maestro-backend');
 
   constructor(
     private readonly prisma: PrismaService,
@@ -28,6 +30,15 @@ export class TasksService {
       },
     });
 
+    // Propagación de contexto de trace W3C (traceparent) hacia el worker
+    // Python — BullMQ/Redis no es HTTP, así que la auto-instrumentación
+    // NO conecta el span de esta petición con los spans que el worker
+    // genere al procesar el job. Inyectamos el contexto activo en un
+    // objeto carrier plano y lo mandamos dentro del job; el worker lo
+    // lee y lo usa como "padre" de su propio span (ver workers/tracing.py).
+    const traceCarrier: Record<string, string> = {};
+    propagation.inject(context.active(), traceCarrier);
+
     // El payload que cruza a Python sigue el contrato en shared/contracts.md
     //
     // IMPORTANTE: no pasar opciones de prioridad/delay/attempts en .add() —
@@ -41,6 +52,7 @@ export class TasksService {
       prompt: task.prompt,
       userId: task.userId,
       metadata: task.metadata ?? {},
+      traceContext: traceCarrier,
     });
 
     this.logger.log(`Tarea ${task.id} creada y encolada (type=${task.type})`);

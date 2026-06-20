@@ -28,6 +28,7 @@ from agents.researcher import ResearcherAgent
 from bullmq_client import BullMQConsumer
 from config import POLL_TIMEOUT_SECONDS, QUEUE_NAME, REDIS_URL
 from models import SubTask, TaskJob, TaskResult, TaskStatus, TaskType
+from tracing import extract_context, get_tracer, setup_telemetry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,11 +82,34 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
         logger.error(f"Payload inválido, no se pudo construir TaskJob: {exc}")
         return
 
+    # Reconstruye el contexto de trace que NestJS propagó en el job (ver
+    # shared/contracts.md, campo traceContext) para que este span quede
+    # anidado bajo la traza de la petición HTTP original, no como una
+    # traza nueva sin relación. Si el job no trae ese campo, simplemente
+    # se abre una traza raíz nueva — extract_context() ya maneja eso.
+    parent_context = extract_context(job.traceContext)
+    tracer = get_tracer()
+
+    with tracer.start_as_current_span(
+        f"process_task.{job.type.value}",
+        context=parent_context,
+        attributes={
+            "maestro.task_id": job.taskId,
+            "maestro.task_type": job.type.value,
+            "maestro.user_id": job.userId,
+        },
+    ) as span:
+        _process_job_inner(job, job_id, consumer, span)
+
+
+def _process_job_inner(job: TaskJob, job_id: str | None, consumer: BullMQConsumer, span) -> None:
     try:
         agent = get_agent(job.type)
     except Exception as exc:
         # Típicamente: falta una API key requerida por ese agente.
         logger.exception(f"No se pudo inicializar el agente para type={job.type}")
+        span.set_attribute("maestro.status", "FAILED")
+        span.record_exception(exc)
         result = TaskResult(
             taskId=job.taskId,
             status=TaskStatus.FAILED,
@@ -122,6 +146,8 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
             result = agent.run(job)
     except Exception as exc:
         logger.exception(f"Agente {agent.name} falló procesando taskId={job.taskId}")
+        span.set_attribute("maestro.status", "FAILED")
+        span.record_exception(exc)
         result = TaskResult(
             taskId=job.taskId,
             status=TaskStatus.FAILED,
@@ -129,6 +155,7 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
             error=str(exc),
         )
 
+    span.set_attribute("maestro.status", result.status.value)
     consumer.publish_result(job.taskId, result.model_dump())
 
     if job_id:
@@ -136,6 +163,7 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
 
 
 def main() -> None:
+    setup_telemetry()
     logger.info(f"Worker iniciado. Conectando a {REDIS_URL}, escuchando cola '{QUEUE_NAME}'")
     consumer = BullMQConsumer(redis_url=REDIS_URL, queue_name=QUEUE_NAME)
 

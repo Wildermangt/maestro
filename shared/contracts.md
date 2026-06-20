@@ -12,9 +12,17 @@ manualmente en ambos lados (TypeScript con tipos, Python con Pydantic).
   "type": "DIRECTOR" | "RESEARCH" | "ANALYSIS" | "PRESENTATION" | "WEBSITE",
   "prompt": "string del usuario",
   "userId": "uuid-v4",
-  "metadata": {}
+  "metadata": {},
+  "traceContext": { "traceparent": "00-...-...-01" }
 }
 ```
+
+`traceContext` (Sprint 5): contexto de trace W3C inyectado por NestJS
+(`@opentelemetry/api`, función `propagation.inject`) para que el worker
+Python pueda continuar la misma traza distribuida en vez de iniciar una
+nueva sin relación — ver `workers/tracing.py`. Es opcional por diseño:
+si no viene (ej. un mensaje encolado manualmente para pruebas), el
+worker simplemente inicia un span raíz nuevo en vez de fallar.
 
 ## Resultado que el Worker devuelve (Redis → NestJS)
 

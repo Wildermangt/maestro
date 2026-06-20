@@ -237,12 +237,75 @@ ve en el dashboard. Ambos se corrigieron — ver `agents/director.py`,
 método `_run_subtask`, y se agregó una prueba específica para esto
 antes de cerrar el sprint.
 
-### Siguiente paso (Sprint 5)
+### Sprint 5 — Producción y Escalado ✅ implementado (alcance acordado)
 
-Producción y escalado: tests E2E, OpenTelemetry, rate limiting,
-documentación de API, deploy a Kubernetes/Railway. También sería el
-momento de migrar el storage de artefactos de volumen local a
-MinIO/S3 real (el contrato ya está diseñado para que ese cambio no
-toque el frontend).
+De la lista original del documento, este sprint cubrió las tres piezas
+que se priorizaron: **documentación de API**, **observabilidad
+(OpenTelemetry)**, y **configuración de deploy a Railway**. Tests E2E
+y rate limiting quedaron fuera del alcance por decisión explícita —
+ver "Lo que queda fuera" abajo.
+
+**1. Swagger / OpenAPI.** `GET /api-docs` sirve la UI interactiva.
+Los DTOs y el controller de `tasks` están decorados con `@ApiProperty`/
+`@ApiOperation`/`@ApiResponse`. Ver `backend/src/main.ts`.
+
+**2. OpenTelemetry, con trazabilidad distribuida real.** Ambos lados
+—NestJS y el worker Python— están instrumentados, y lo más importante:
+**el contexto de trace se propaga entre ellos**, aunque no se comunican
+por HTTP sino por BullMQ/Redis (donde la auto-instrumentación no
+conecta nada por sí sola). NestJS inyecta el `traceparent` W3C en el
+payload del job (`tasks.service.ts`, función `propagation.inject`); el
+worker lo extrae y lo usa como contexto padre de su propio span
+(`workers/tracing.py`, función `extract_context`). Esto se probó
+explícitamente: un `traceparent` simulado del lado Node produce un
+span en Python con el mismo `trace_id`, no uno desconectado.
+
+Exportador actual: **consola** (`ConsoleSpanExporter` en ambos lados),
+por decisión explícita — no hay colector externo todavía. Cambiar a
+Jaeger/Grafana/Honeycomb más adelante es solo cambiar el exportador,
+la instrumentación no se toca.
+
+**3. Configuración de deploy a Railway.** `railway.json` en `backend/`,
+`workers/` y `frontend/`, más una guía completa en `DEPLOY_RAILWAY.md`
+con el proceso paso a paso. Dos decisiones importantes:
+
+- **Postgres y Redis**: plugins gestionados de Railway (backups
+  automáticos), en vez de los contenedores propios de desarrollo local.
+- **Qdrant**: Railway no tiene plugin gestionado, así que en producción
+  se usa **Qdrant Cloud** (tier gratuito) — mismo cliente, solo cambia
+  `QDRANT_URL`/`QDRANT_API_KEY`.
+
+⚠️ **Limitación de plataforma aceptada explícitamente**: Railway no
+expone el socket Docker del host, así que el sandbox del Analista NO
+puede lanzar contenedores efímeros ahí — usa el fallback de subprocess
+del Sprint 3 (ya construido y probado, no es una ruta nueva sin
+verificar). Está documentado en `DEPLOY_RAILWAY.md`.
+
+### Bug/inconsistencia encontrada y corregida en este sprint
+
+`code_executor.py` forzaba `user="nobody"` al lanzar el contenedor
+sandbox, lo cual sobreescribía el `USER sandboxuser` definido en
+`docker/sandbox/Dockerfile` — una inconsistencia entre un usuario sin
+`HOME` válido en esa imagen y la configuración ya probada del
+Dockerfile. Se quitó la sobreescritura.
+
+### Lo que queda fuera de los 5 sprints originales
+
+No estaban en el plan original, pero quedaron como deuda técnica
+explícita a lo largo del proyecto, documentada en el código donde
+corresponde:
+
+- Tests automatizados de integración/E2E y rate limiting por usuario
+  (no priorizados para este sprint — agregarlos después es
+  relativamente rápido una vez que el resto está en pie).
+- Migrar el storage de artefactos de volumen local a MinIO/S3 real
+  (el contrato ya está diseñado para que ese cambio no toque el
+  frontend — ver `shared/contracts.md`).
+- Agente QA (mencionado en el documento original, nunca implementado).
+- Scheduler de tareas recurrentes con Celery Beat (mencionado en el
+  documento original, nunca implementado).
+- Repartir subtareas del Director entre múltiples workers en paralelo
+  (hoy todo el plan de un Director corre en el worker que tomó ese
+  job — ver limitación documentada en `agents/director.py`).
 
 

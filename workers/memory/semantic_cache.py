@@ -29,8 +29,16 @@ EMBEDDING_DIM = 1536  # dimensión de text-embedding-3-small (OpenAI)
 
 
 class SemanticCache:
-    def __init__(self, url: str | None = None, embed_fn=None):
-        self.client = QdrantClient(url=url or os.getenv("QDRANT_URL", "http://qdrant:6333"))
+    def __init__(self, url: str | None = None, api_key: str | None = None, embed_fn=None):
+        # En desarrollo local (docker-compose.yml) Qdrant corre sin
+        # autenticación. En producción con Qdrant Cloud (Sprint 5),
+        # QDRANT_API_KEY es obligatoria — el cliente simplemente no la
+        # envía si está vacía/None, lo cual es el comportamiento correcto
+        # para el caso local.
+        self.client = QdrantClient(
+            url=url or os.getenv("QDRANT_URL", "http://qdrant:6333"),
+            api_key=api_key or os.getenv("QDRANT_API_KEY") or None,
+        )
         self._embed_fn = embed_fn or self._default_embed
         self._ensure_collection()
 

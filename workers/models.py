@@ -30,6 +30,10 @@ class TaskJob(BaseModel):
     prompt: str
     userId: str
     metadata: dict = Field(default_factory=dict)
+    # Contexto de trace W3C inyectado por NestJS (ver shared/contracts.md).
+    # Opcional: si el job se encoló sin esto (ej. pruebas manuales), el
+    # worker simplemente abre un span raíz nuevo en vez de fallar.
+    traceContext: Optional[dict] = None
 
 
 class TaskResult(BaseModel):
