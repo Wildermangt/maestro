@@ -1,5 +1,16 @@
 'use client';
 
+// NOTA: los artefactos (PPTX, sitios) que genera una subtarea PRESENTATION
+// o WEBSITE delegada por el Director NO aparecen aquí en tiempo real.
+// Los eventos de progreso (task:subtask-progress) solo llevan el `result`
+// crudo del agente, no el registro Artifact ya creado en Postgres — ese
+// registro se crea al final, cuando NestJS procesa task:completed del
+// Director padre completo. Los links de descarga aparecen en el nivel
+// superior de la tarjeta de tarea (ver page.tsx, item.artifacts), no aquí.
+// Es un trade-off consciente: evitar esto requeriría que NestJS creara
+// artifacts parciales por cada subtarea, lo cual complica el modelo de
+// datos para un beneficio menor (esperar el resultado final no es costoso).
+
 interface SubtaskView {
   subtaskId: string;
   agentType: string;

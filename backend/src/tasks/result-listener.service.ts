@@ -87,7 +87,16 @@ export class ResultListenerService implements OnModuleInit, OnModuleDestroy {
 
     await this.tasksService.markCompleted(taskId, resultPayload.result, status);
 
-    this.gateway.emitTaskCompleted(taskId, resultPayload);
+    const rawArtifacts: Array<{ type: string; filename: string; relativePath: string }> =
+      resultPayload.artifacts ?? [];
+
+    let createdArtifacts: Array<{ id: string; type: string; filename: string; url: string }> = [];
+    if (rawArtifacts.length > 0) {
+      createdArtifacts = await this.tasksService.createArtifacts(taskId, rawArtifacts);
+      this.logger.log(`${createdArtifacts.length} artefacto(s) registrados para tarea ${taskId}`);
+    }
+
+    this.gateway.emitTaskCompleted(taskId, { ...resultPayload, artifacts: createdArtifacts });
     this.logger.log(`Tarea ${taskId} completada (status=${status}) y notificada por WebSocket`);
   }
 

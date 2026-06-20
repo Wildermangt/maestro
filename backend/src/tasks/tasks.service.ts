@@ -85,4 +85,38 @@ export class TasksService {
       },
     });
   }
+
+  /**
+   * Crea los registros Artifact a partir de lo que el worker reportó
+   * en TaskResult.artifacts (ver shared/contracts.md). `url` apunta al
+   * endpoint de descarga propio en vez de a una ruta de archivo directa
+   * — así, si en el futuro el storage migra a S3/MinIO (Sprint 5), el
+   * frontend nunca necesita cambiar, solo el endpoint de descarga.
+   */
+  async createArtifacts(
+    taskId: string,
+    artifacts: Array<{ type: string; filename: string; relativePath: string }>,
+  ) {
+    const created = await Promise.all(
+      artifacts.map((a) =>
+        this.prisma.artifact.create({
+          data: {
+            taskId,
+            type: a.type,
+            filename: a.filename,
+            // Se guarda la relativePath en `url` temporalmente; el valor
+            // público real se construye en el controller a partir del id.
+            url: a.relativePath,
+          },
+        }),
+      ),
+    );
+
+    return created.map((a) => ({
+      id: a.id,
+      type: a.type,
+      filename: a.filename,
+      url: `/api/tasks/${taskId}/artifacts/${a.id}/download`,
+    }));
+  }
 }

@@ -29,11 +29,32 @@ en el canal pub/sub `task-completed` para que NestJS reaccione sin polling.
     "summary": "string",
     "data": {}
   },
-  "artifacts": [],
+  "artifacts": [
+    {
+      "type": "pptx" | "website",
+      "filename": "string, ej: presentacion.pptx",
+      "relativePath": "string relativo a /app/artifacts, ej: a1b2c3/presentacion.pptx"
+    }
+  ],
   "error": null,
   "completedAt": "ISO-8601"
 }
 ```
+
+### Artefactos de archivo (Sprint 4+)
+
+Cuando un agente produce un archivo descargable (PPTX del Presentador,
+código del sitio del Diseñador Web), el worker lo escribe en
+`/app/artifacts/{taskId}/{filename}` — un volumen Docker compartido
+entre `worker` y `backend` (ver docker-compose.yml). El worker NUNCA
+escribe directamente en Postgres; en vez de eso, describe el archivo
+en el array `artifacts` de arriba, y NestJS —al procesar `task-completed`—
+crea la fila `Artifact` correspondiente con `url` apuntando al endpoint
+`GET /api/tasks/:taskId/artifacts/:artifactId/download`.
+
+Esto mantiene el límite de responsabilidad limpio: Python nunca toca
+Postgres directamente (evita duplicar lógica de ORM en dos lenguajes),
+y NestJS es la única fuente de verdad sobre qué artefactos existen.
 
 ## Por qué este diseño
 

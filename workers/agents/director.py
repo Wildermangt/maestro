@@ -59,6 +59,13 @@ especializados. Tienes disponibles estos tipos de agente:
 - ANALYSIS: analiza datos/calcula métricas a partir de un objetivo (genera y \
 ejecuta código Python). Si una subtarea ANALYSIS depende de los hallazgos \
 de una subtarea RESEARCH, indícalo en dependsOn.
+- PRESENTATION: genera una presentación PPTX descargable a partir de un \
+tema o de contenido de investigación previa. Casi siempre depende de \
+una subtarea RESEARCH si el usuario pide "presentación sobre X" sin dar \
+el contenido ya hecho.
+- WEBSITE: genera un sitio web estático (HTML/CSS) de una sola página y \
+lo despliega. Úsalo solo si el usuario pide explícitamente un sitio web, \
+landing page, o portafolio — no lo agregues si no se pidió.
 
 Analiza el objetivo del usuario y genera un plan de ejecución con entre \
 1 y 5 subtareas. Considera paralelismo: solo declares dependsOn cuando \
@@ -71,7 +78,7 @@ sin backticks de markdown:
 
 {
   "subtasks": [
-    {"id": "string corto único, ej 't1'", "agentType": "RESEARCH" o "ANALYSIS", \
+    {"id": "string corto único, ej 't1'", "agentType": "RESEARCH" | "ANALYSIS" | "PRESENTATION" | "WEBSITE", \
 "prompt": "instrucción específica y autocontenida para ese agente", "dependsOn": ["t1", ...]}
   ]
 }"""
@@ -138,6 +145,11 @@ class DirectorAgent(BaseAgent):
             else TaskStatus.COMPLETED
         )
 
+        # Recolecta los artefactos de TODAS las subtareas (ej: el PPTX que
+        # generó una subtarea PRESENTATION delegada) para que NestJS pueda
+        # crear los registros Artifact correspondientes al consolidar.
+        all_artifacts = [a for st in plan.subtasks for a in st.artifacts]
+
         return TaskResult(
             taskId=job.taskId,
             status=status,
@@ -145,6 +157,7 @@ class DirectorAgent(BaseAgent):
                 "summary": final_state["final_summary"],
                 "subtasks": [st.model_dump() for st in plan.subtasks],
             },
+            artifacts=all_artifacts,
         )
 
     # --- Construcción del grafo ---
@@ -242,7 +255,15 @@ class DirectorAgent(BaseAgent):
             agent = self._get_sub_agent(subtask.agentType)
 
             # Si esta subtarea depende de otra, le pasamos su resultado
-            # como contexto (ver agents/analyst.py: lee metadata.context_data).
+            # como contexto (ver agents/analyst.py y agents/presenter.py:
+            # ambos leen metadata.context_data).
+            #
+            # LIMITACIÓN CONOCIDA: solo se propaga el resultado de la
+            # PRIMERA dependencia (dependsOn[0]). Cubre el caso común de
+            # este sprint (ANALYSIS o PRESENTATION dependiendo de UNA
+            # subtarea RESEARCH). Si en el futuro se necesita una subtarea
+            # que combine resultados de 2+ dependencias, este punto hay
+            # que extenderlo para pasar una lista de contextos en vez de uno.
             context_data = None
             if subtask.dependsOn:
                 dep = subtasks_by_id.get(subtask.dependsOn[0])
@@ -250,7 +271,13 @@ class DirectorAgent(BaseAgent):
                     context_data = dep.result
 
             sub_job = TaskJob(
-                taskId=f"{parent_job.taskId}:{subtask.id}",
+                # IMPORTANTE: se usa el taskId del PADRE, no uno compuesto
+                # como "{parent}:{subtask.id}". Esto es necesario para que
+                # los agentes que guardan archivos (Presenter, Designer)
+                # los escriban en /app/artifacts/{taskId}/, la misma carpeta
+                # que NestJS asociará con la tarea visible para el usuario
+                # al crear el Artifact — ver result-listener.service.ts.
+                taskId=parent_job.taskId,
                 type=subtask.agentType,
                 prompt=subtask.prompt,
                 userId=parent_job.userId,
@@ -265,6 +292,7 @@ class DirectorAgent(BaseAgent):
             else:
                 subtask.status = SubTaskStatus.COMPLETED
                 subtask.result = sub_result.result
+                subtask.artifacts = sub_result.artifacts
 
         except Exception as exc:
             logger.exception(f"Subtarea {subtask.id} (agentType={subtask.agentType}) falló")

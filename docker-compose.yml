@@ -35,6 +35,22 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  # Build-only: construye la imagen del sandbox del Analista. No corre
+  # como contenedor persistente — `code_executor.py` lanza contenedores
+  # efímeros A PARTIR de esta imagen, uno por cada ejecución de código.
+  # `docker compose up --build` la construye igual que cualquier otro
+  # servicio; el comando "true" hace que el contenedor termine de
+  # inmediato (exit 0) tras construirse, y restart:"no" evita que
+  # Compose lo reinicie en loop — solo nos interesa que la IMAGEN
+  # quede disponible en el daemon para que el worker la use.
+  sandbox-image:
+    build:
+      context: ./docker/sandbox
+      dockerfile: Dockerfile
+    image: maestro-sandbox:latest
+    command: ["true"]
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -50,6 +66,9 @@ services:
       REDIS_URL: ${REDIS_URL}
       FRONTEND_URL: ${FRONTEND_URL}
       PORT: 4000
+      ARTIFACTS_DIR: /app/artifacts
+    volumes:
+      - artifacts_data:/app/artifacts
     ports:
       - "4000:4000"
 
@@ -63,6 +82,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      sandbox-image:
+        condition: service_completed_successfully
     environment:
       REDIS_URL: ${REDIS_URL}
       QUEUE_NAME: tasks-queue
@@ -71,6 +92,20 @@ services:
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+      ARTIFACTS_DIR: /app/artifacts
+    volumes:
+      # Monta el socket del Docker del HOST dentro del worker, para que
+      # pueda lanzar contenedores hermanos efímeros (sandbox del Analista).
+      # Ver la nota de seguridad extensa en workers/tools/code_executor.py
+      # antes de llevar esto a un entorno multi-tenant o de producción.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Compartido con el backend: artefactos generados (PPTX, etc.) que
+      # el worker escribe y NestJS sirve para descarga. En Sprint 5 esto
+      # se reemplaza por MinIO/S3 real (ver documento original) sin que
+      # el contrato cambie demasiado: solo cambia DÓNDE se guarda el
+      # archivo, no cómo Artifact.url lo referencia.
+      - artifacts_data:/app/artifacts
 
   frontend:
     build:
@@ -89,3 +124,4 @@ services:
 volumes:
   postgres_data:
   qdrant_data:
+  artifacts_data:

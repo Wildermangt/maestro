@@ -6,21 +6,24 @@ al agente correspondiente según `type`, y publica el resultado.
 
 El router usa inicialización perezosa (lazy): cada agente se instancia
 solo la primera vez que se necesita, y solo una vez (se cachea). Esto
-es deliberado — ResearcherAgent/AnalystAgent fallan en __init__ si
-faltan las API keys requeridas, y no queremos que eso tumbe al worker
-completo impidiendo que DirectorAgent (en su forma básica) siga
-respondiendo.
+es deliberado — ResearcherAgent/AnalystAgent/PresenterAgent/DesignerAgent
+fallan en __init__ si faltan las API keys requeridas, y no queremos que
+eso tumbe al worker completo impidiendo que DirectorAgent (en su forma
+básica) siga respondiendo.
 
-El DirectorAgent (Sprint 3) necesita poder delegar a Researcher/Analyst
+El DirectorAgent (Sprint 3+) necesita poder delegar a los demás agentes
 in-process — ver agents/director.py para el porqué. Para eso recibe
 `AGENT_FACTORIES` completo, pero usando el mismo `get_agent()` perezoso
 para que sus sub-agentes también se cacheen y compartan instancia con
-el resto del worker (un solo ResearcherAgent, no uno por cada subtarea).
+el resto del worker (una sola instancia de cada agente, no una por
+cada subtarea).
 """
 import logging
 
 from agents.analyst import AnalystAgent
+from agents.designer import DesignerAgent
 from agents.director import DirectorAgent
+from agents.presenter import PresenterAgent
 from agents.researcher import ResearcherAgent
 from bullmq_client import BullMQConsumer
 from config import POLL_TIMEOUT_SECONDS, QUEUE_NAME, REDIS_URL
@@ -36,7 +39,15 @@ AGENT_FACTORIES = {
     TaskType.DIRECTOR: DirectorAgent,
     TaskType.RESEARCH: ResearcherAgent,
     TaskType.ANALYSIS: AnalystAgent,
+    TaskType.PRESENTATION: PresenterAgent,
+    TaskType.WEBSITE: DesignerAgent,
 }
+
+# Tipos que el Director puede delegar in-process. PRESENTATION y WEBSITE
+# se agregan aquí (Sprint 4) además de RESEARCH/ANALYSIS (Sprint 3) —
+# así un objetivo como "investiga X y crea una presentación" puede
+# descomponerse en RESEARCH -> PRESENTATION con dependsOn.
+DELEGABLE_TYPES = [TaskType.RESEARCH, TaskType.ANALYSIS, TaskType.PRESENTATION, TaskType.WEBSITE]
 
 _agent_cache: dict = {}
 
@@ -52,13 +63,9 @@ def get_agent(task_type: TaskType):
             # El Director delega a estos tipos in-process. Le pasamos
             # factories (no instancias) que internamente usan este mismo
             # get_agent() perezoso, para reusar la misma instancia
-            # cacheada de Researcher/Analyst en vez de crear una nueva
-            # por cada subtarea.
+            # cacheada en vez de crear una nueva por cada subtarea.
             agent.set_agent_factories(
-                {
-                    TaskType.RESEARCH: lambda: get_agent(TaskType.RESEARCH),
-                    TaskType.ANALYSIS: lambda: get_agent(TaskType.ANALYSIS),
-                }
+                {t: (lambda t=t: get_agent(t)) for t in DELEGABLE_TYPES}
             )
         _agent_cache[task_type] = agent
 
@@ -126,23 +133,6 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
 
     if job_id:
         consumer.mark_active_done(job_id)
-
-
-def main() -> None:
-    logger.info(f"Worker iniciado. Conectando a {REDIS_URL}, escuchando cola '{QUEUE_NAME}'")
-    consumer = BullMQConsumer(redis_url=REDIS_URL, queue_name=QUEUE_NAME)
-
-    while True:
-        job_payload = consumer.fetch_job(timeout=POLL_TIMEOUT_SECONDS)
-        if job_payload is None:
-            continue  # timeout normal, vuelve a esperar
-
-        logger.info(f"Job recibido: taskId={job_payload.get('taskId')}")
-        process_job(job_payload, consumer)
-
-
-if __name__ == "__main__":
-    main()
 
 
 def main() -> None:

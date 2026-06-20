@@ -89,6 +89,7 @@ class SubTask(BaseModel):
     status: SubTaskStatus = SubTaskStatus.PENDING
     result: Optional[dict] = None
     error: Optional[str] = None
+    artifacts: list[dict] = Field(default_factory=list)
 
 
 class DirectorPlan(BaseModel):
@@ -110,3 +111,32 @@ class SubTaskProgressEvent(BaseModel):
     prompt: str
     result: Optional[dict] = None
     error: Optional[str] = None
+
+
+# --- Modelos del Agente Presentador (Sprint 4) ---
+
+class SlideContent(BaseModel):
+    title: str
+    bullets: list[str] = Field(default_factory=list)
+
+
+class PresentationPlan(BaseModel):
+    """Estructura de slides que Claude genera antes de construir el PPTX."""
+    deck_title: str
+    slides: list[SlideContent]
+
+
+class PresentationOutput(BaseModel):
+    """Resultado final que el Presentador devuelve al Director/usuario."""
+    summary: str
+    slide_count: int
+    artifactId: str  # referencia al Artifact creado en Postgres (ver backend)
+
+
+# --- Modelos del Agente Diseñador Web (Sprint 4) ---
+
+class WebsiteOutput(BaseModel):
+    """Resultado final que el Diseñador Web devuelve."""
+    summary: str
+    deployUrl: Optional[str] = None  # None si el deploy a Vercel no se pudo hacer
+    deployed: bool = False

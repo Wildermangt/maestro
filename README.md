@@ -141,9 +141,108 @@ con su estado en vivo, y al final el resumen consolidado.
   llamadas HTTP bloqueantes (requests a Tavily/Firecrawl/Anthropic), así
   que hilos son más simples aquí que reescribir todo a async/await.
 
-### Siguiente paso (Sprint 4)
+### Siguiente paso (Sprint 4) ✅ implementado
 
-Agentes Presentador (python-pptx) y Diseñador Web (deploy a Vercel),
-y mover el sandbox del Analista a un contenedor Docker efímero real.
+Tres piezas nuevas:
+
+**1. Sandbox del Analista migrado a Docker real.** Cada ejecución de
+código generado por el LLM ahora lanza un contenedor efímero (imagen
+`maestro-sandbox`, definida en `docker/sandbox/Dockerfile`): sin red,
+sin privilegios, memoria limitada a 256MB, filesystem de solo lectura
+excepto `/tmp`. El worker habla con el daemon Docker del HOST a través
+de un socket montado (`/var/run/docker.sock`) — ver la nota de
+seguridad extensa en `workers/tools/code_executor.py` antes de llevar
+esto fuera de un entorno de desarrollo local. Si Docker no está
+disponible, cae automáticamente al subprocess aislado del Sprint 3
+(degradación con gracia, no falla el Analista).
+
+⚠️ **No verificado con Docker real de extremo a extremo** (no estuvo
+disponible en el entorno de desarrollo) — la primera vez que lo uses,
+revisa los logs del worker por si hay errores de "Read-only file
+system"; está documentado en el código qué ajustar si pasa.
+
+**2. Agente Presentador** (`workers/agents/presenter.py`): Claude
+estructura el contenido en slides, `python-pptx` construye el archivo
+real. Probado generando un PPTX real y reabriéndolo para confirmar
+que es válido.
+
+**3. Agente Diseñador Web** (`workers/agents/designer.py`): Claude
+genera un sitio estático de una sola página (HTML/CSS inline, sin
+imágenes generadas — alcance acordado), y si `VERCEL_TOKEN` está
+configurada, lo despliega vía la API de Vercel. Generar el sitio y
+desplegarlo son capacidades independientes: si el deploy falla o no
+hay token, la tarea sigue siendo `COMPLETED` con el HTML descargable.
+
+### Artefactos descargables
+
+Ambos agentes nuevos guardan su archivo en un volumen compartido
+(`artifacts_data`, montado en `worker:/app/artifacts` y
+`backend:/app/artifacts`). El worker nunca toca Postgres directamente
+— describe el archivo en `TaskResult.artifacts` (ver
+`shared/contracts.md`), y NestJS crea el registro `Artifact`
+correspondiente al procesar `task-completed`. La descarga real pasa
+por:
+
+```
+GET /api/tasks/:taskId/artifacts/:artifactId/download
+```
+
+con un guard explícito contra path traversal (la ruta resuelta debe
+quedar dentro de `ARTIFACTS_ROOT`).
+
+### Variables de entorno nuevas
+
+```
+VERCEL_TOKEN=     # https://vercel.com/account/tokens
+```
+
+### Probar el Sprint 4
+
+```bash
+docker compose up --build
+```
+
+La primera vez, esto también construye la imagen `maestro-sandbox`
+(servicio `sandbox-image` en docker-compose.yml — no corre como
+contenedor persistente, solo se construye y queda disponible para que
+el worker lance contenedores efímeros a partir de ella).
+
+```bash
+# Presentación
+curl -X POST http://localhost:4000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"type": "PRESENTATION", "prompt": "Tendencias de adopción cripto en Latinoamérica"}'
+
+# Sitio web
+curl -X POST http://localhost:4000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"type": "WEBSITE", "prompt": "Landing page para un fotógrafo de bodas en México"}'
+
+# Director delegando a Investigador + Presentador
+curl -X POST http://localhost:4000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"type": "DIRECTOR", "prompt": "Investiga el mercado cripto en Colombia y crea una presentación"}'
+```
+
+El dashboard mostrará un botón de descarga para el PPTX/HTML, y si el
+Diseñador Web logró desplegar, un link directo al sitio en vivo.
+
+### Bug encontrado y corregido en este sprint
+
+El Director no propagaba los `artifacts` de subtareas delegadas
+(ej: una subtarea `PRESENTATION`) a su propio resultado final, y
+usaba un `taskId` compuesto para las subtareas que habría hecho que
+los archivos se guardaran en una carpeta distinta a la que el usuario
+ve en el dashboard. Ambos se corrigieron — ver `agents/director.py`,
+método `_run_subtask`, y se agregó una prueba específica para esto
+antes de cerrar el sprint.
+
+### Siguiente paso (Sprint 5)
+
+Producción y escalado: tests E2E, OpenTelemetry, rate limiting,
+documentación de API, deploy a Kubernetes/Railway. También sería el
+momento de migrar el storage de artefactos de volumen local a
+MinIO/S3 real (el contrato ya está diseñado para que ese cambio no
+toque el frontend).
 
 
