@@ -41,3 +41,20 @@ class TaskResult(BaseModel):
     completedAt: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+
+
+class SourceRef(BaseModel):
+    """Una fuente citada en la investigación, con su URL para verificación."""
+    title: str
+    url: str
+
+
+class ResearchOutput(BaseModel):
+    """
+    Shape estructurado que el Agente Investigador produce.
+    Validar esto contra la salida del LLM evita que un resumen mal
+    formado o sin fuentes llegue al usuario como si fuera confiable.
+    """
+    summary: str
+    key_findings: list[str] = Field(default_factory=list)
+    sources: list[SourceRef] = Field(default_factory=list)

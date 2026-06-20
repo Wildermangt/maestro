@@ -1,30 +1,51 @@
 'use client';
 
 import { useState } from 'react';
-import { createTask, Task } from '@/lib/api';
+import { createTask, Task, TaskType } from '@/lib/api';
 import { useTaskSocket, TaskCompletedEvent } from '@/hooks/useTaskSocket';
+
+interface SourceRef {
+  title: string;
+  url: string;
+}
 
 interface FeedItem {
   taskId: string;
   prompt: string;
+  type: TaskType;
   status: string;
   summary?: string;
+  keyFindings?: string[];
+  sources?: SourceRef[];
+  fromCache?: boolean;
+  error?: string;
 }
+
+const TASK_TYPES: { value: TaskType; label: string }[] = [
+  { value: 'DIRECTOR', label: 'Director (echo de prueba)' },
+  { value: 'RESEARCH', label: 'Investigador (búsqueda web real)' },
+];
 
 export default function DashboardPage() {
   const [prompt, setPrompt] = useState('');
+  const [taskType, setTaskType] = useState<TaskType>('RESEARCH');
   const [submitting, setSubmitting] = useState(false);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const { connected } = useTaskSocket((event: TaskCompletedEvent) => {
+    const result = (event.result ?? {}) as Record<string, unknown>;
     setFeed((prev) =>
       prev.map((item) =>
         item.taskId === event.taskId
           ? {
               ...item,
-              status: event.status,
-              summary: (event.result as any)?.summary,
+              status: event.status as string,
+              summary: result.summary as string | undefined,
+              keyFindings: result.key_findings as string[] | undefined,
+              sources: result.sources as SourceRef[] | undefined,
+              fromCache: result.fromCache as boolean | undefined,
+              error: event.error as string | undefined,
             }
           : item,
       ),
@@ -39,9 +60,9 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      const task: Task = await createTask({ type: 'DIRECTOR', prompt });
+      const task: Task = await createTask({ type: taskType, prompt });
       setFeed((prev) => [
-        { taskId: task.id, prompt: task.prompt, status: 'PROCESSING' },
+        { taskId: task.id, prompt: task.prompt, type: taskType, status: 'PROCESSING' },
         ...prev,
       ]);
       setPrompt('');
@@ -58,7 +79,7 @@ export default function DashboardPage() {
         <header className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Prompt Maestro</h1>
-            <p className="text-sm text-zinc-500">Walking Skeleton — Sprint 1</p>
+            <p className="text-sm text-zinc-500">Sprint 2 — Agente Investigador</p>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span
@@ -69,11 +90,31 @@ export default function DashboardPage() {
         </header>
 
         <form onSubmit={handleSubmit} className="mb-8">
+          <div className="mb-2 flex gap-2">
+            {TASK_TYPES.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setTaskType(t.value)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                  taskType === t.value
+                    ? 'bg-accent text-white'
+                    : 'bg-surface text-zinc-500 border border-border'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <div className="rounded-lg border border-border bg-surface p-1">
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe un objetivo para el Agente Director..."
+              placeholder={
+                taskType === 'RESEARCH'
+                  ? 'Ej: Analiza el mercado de criptomonedas en Colombia 2026'
+                  : 'Describe un objetivo para el Agente Director...'
+              }
               rows={3}
               className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-600"
             />
@@ -94,7 +135,7 @@ export default function DashboardPage() {
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-500">
             Tareas
           </h2>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {feed.length === 0 && (
               <p className="text-sm text-zinc-600">Aún no hay tareas. Envía una arriba.</p>
             )}
@@ -103,12 +144,48 @@ export default function DashboardPage() {
                 key={item.taskId}
                 className="rounded-lg border border-border bg-surface px-4 py-3"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-zinc-300">{item.prompt}</p>
-                  <StatusBadge status={item.status} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {item.fromCache && (
+                      <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-400">
+                        caché
+                      </span>
+                    )}
+                    <StatusBadge status={item.status} />
+                  </div>
                 </div>
+
                 {item.summary && (
-                  <p className="mt-2 text-sm text-emerald-400">→ {item.summary}</p>
+                  <p className="mt-2 text-sm text-zinc-200">{item.summary}</p>
+                )}
+
+                {item.keyFindings && item.keyFindings.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc space-y-0.5 text-sm text-zinc-400">
+                    {item.keyFindings.map((finding, i) => (
+                      <li key={i}>{finding}</li>
+                    ))}
+                  </ul>
+                )}
+
+                {item.sources && item.sources.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {item.sources.map((source, i) => (
+                      <a
+                        key={i}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-border px-2 py-0.5 text-xs text-zinc-500 hover:border-accent hover:text-accent"
+                      >
+                        {source.title || new URL(source.url).hostname}
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {item.error && (
+                  <p className="mt-2 text-sm text-red-400">⚠ {item.error}</p>
                 )}
               </div>
             ))}

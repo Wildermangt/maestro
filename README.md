@@ -46,7 +46,52 @@ maestro/
 └── docker-compose.yml
 ```
 
-## Siguiente paso (Sprint 2)
+## Siguiente paso (Sprint 2) ✅ implementado
 
-Sustituir el "Hola Mundo" del worker por el Agente Investigador real (CrewAI + Tavily + Firecrawl).
-El contrato de mensajes ya está listo para soportar payloads más complejos — ver `shared/contracts.md`.
+El Agente Investigador real ya está implementado: Tavily (búsqueda) →
+Firecrawl (lectura completa de las top fuentes) → Claude (síntesis) →
+Qdrant (caché semántico). Ver `workers/agents/researcher.py`.
+
+### Variables de entorno nuevas requeridas
+
+Copia `.env.example` a `.env` y completa:
+
+```
+TAVILY_API_KEY=        # https://app.tavily.com
+FIRECRAWL_API_KEY=     # https://www.firecrawl.dev
+ANTHROPIC_API_KEY=     # https://console.anthropic.com
+OPENAI_API_KEY=        # opcional, solo para embeddings del caché semántico
+```
+
+⚠️ **Nunca pegues estas keys en un chat ni las commitees a git.** Van solo
+en tu `.env` local, que ya está en `.gitignore`.
+
+### Probar el Investigador
+
+```bash
+docker compose up --build
+```
+
+```bash
+curl -X POST http://localhost:4000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"type": "RESEARCH", "prompt": "Analiza el mercado de criptomonedas en Colombia 2026"}'
+```
+
+El resultado llega por WebSocket con `summary`, `key_findings` (lista) y
+`sources` (con URLs verificables) — visible en el dashboard.
+
+### Decisión de diseño: BullMQ desde Python
+
+No existe cliente oficial maduro de `bullmq` para Python. El worker usa
+un cliente casero (`workers/bullmq_client.py`) que habla directo con las
+estructuras Redis de BullMQ. Funciona para jobs simples sin prioridad/delay.
+Si en el futuro usas esas opciones al encolar desde NestJS, hay que migrar
+a la librería `bullmq-python` — está documentado en ese archivo.
+
+### Siguiente paso (Sprint 3)
+
+Agente Director real con LangGraph: descomponer un objetivo complejo en
+subtareas y delegar al Investigador (y a los agentes que falten: Analista,
+Escritor, etc.) en paralelo o secuencial según dependencias.
+

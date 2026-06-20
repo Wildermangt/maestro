@@ -4,13 +4,17 @@ Punto de entrada del Worker Python.
 Loop infinito: espera jobs en la cola BullMQ (via Redis), los enruta
 al agente correspondiente según `type`, y publica el resultado.
 
-Para el Walking Skeleton solo existe DirectorAgent, pero el router
-ya está listo para añadir researcher/analyst/writer/etc. sin tocar
-este archivo (Sprint 2+).
+El router usa inicialización perezosa (lazy): cada agente se instancia
+solo la primera vez que se necesita, y solo una vez (se cachea). Esto
+es deliberado — ResearcherAgent falla en __init__ si faltan las API
+keys de Tavily/Firecrawl/Anthropic, y no queremos que eso tumbe al
+worker completo impidiendo que DirectorAgent (que no necesita esas
+keys) siga funcionando.
 """
 import logging
 
 from agents.director import DirectorAgent
+from agents.researcher import ResearcherAgent
 from bullmq_client import BullMQConsumer
 from config import POLL_TIMEOUT_SECONDS, QUEUE_NAME, REDIS_URL
 from models import TaskJob, TaskResult, TaskStatus, TaskType
@@ -21,11 +25,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger("worker")
 
-# Router de agentes por tipo de tarea.
-# Sprint 2+: añadir RESEARCH -> ResearcherAgent(), ANALYSIS -> AnalystAgent(), etc.
-AGENT_ROUTER = {
-    TaskType.DIRECTOR: DirectorAgent(),
+# Factories en vez de instancias directas — se instancian on-demand.
+AGENT_FACTORIES = {
+    TaskType.DIRECTOR: DirectorAgent,
+    TaskType.RESEARCH: ResearcherAgent,
 }
+
+_agent_cache: dict = {}
+
+
+def get_agent(task_type: TaskType):
+    if task_type not in AGENT_FACTORIES:
+        logger.warning(f"No hay agente registrado para type={task_type}, usando Director como fallback")
+        task_type = TaskType.DIRECTOR
+
+    if task_type not in _agent_cache:
+        _agent_cache[task_type] = AGENT_FACTORIES[task_type]()
+
+    return _agent_cache[task_type]
 
 
 def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
@@ -37,10 +54,21 @@ def process_job(raw_payload: dict, consumer: BullMQConsumer) -> None:
         logger.error(f"Payload inválido, no se pudo construir TaskJob: {exc}")
         return
 
-    agent = AGENT_ROUTER.get(job.type)
-    if agent is None:
-        logger.warning(f"No hay agente registrado para type={job.type}, usando Director como fallback")
-        agent = AGENT_ROUTER[TaskType.DIRECTOR]
+    try:
+        agent = get_agent(job.type)
+    except Exception as exc:
+        # Típicamente: falta una API key requerida por ese agente.
+        logger.exception(f"No se pudo inicializar el agente para type={job.type}")
+        result = TaskResult(
+            taskId=job.taskId,
+            status=TaskStatus.FAILED,
+            result={},
+            error=f"El agente no pudo inicializarse: {exc}",
+        )
+        consumer.publish_result(job.taskId, result.model_dump())
+        if job_id:
+            consumer.mark_active_done(job_id)
+        return
 
     try:
         result = agent.run(job)
