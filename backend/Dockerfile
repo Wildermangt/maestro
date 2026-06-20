@@ -2,6 +2,12 @@ FROM node:20-slim AS base
 
 WORKDIR /app
 
+# node:20-slim no incluye OpenSSL por defecto, y el motor de Prisma
+# (query engine / schema engine) lo necesita para funcionar correctamente.
+# Sin esto, Prisma cae a un fallback ("Defaulting to openssl-1.1.x") que
+# puede fallar al ejecutar migraciones reales contra Postgres.
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 COPY package.json ./
 RUN npm install
 
@@ -17,4 +23,4 @@ EXPOSE 4000
 # RUN_SEED=true está explícito — útil en desarrollo local y en Railway
 # mientras no haya Firebase Auth real, pero no algo que se quiera
 # correr a ciegas en cada deploy de un entorno con usuarios reales.
-CMD ["sh", "-c", "npx prisma migrate deploy && ([ \"$RUN_SEED\" = \"true\" ] && npx prisma db seed || true) && npm run start"]
+CMD ["sh", "-c", "DEBUG='prisma:*' npx prisma migrate deploy && ([ \"$RUN_SEED\" = \"true\" ] && npx prisma db seed || true) && npm run start"]
