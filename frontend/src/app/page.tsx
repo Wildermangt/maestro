@@ -2,11 +2,21 @@
 
 import { useState } from 'react';
 import { createTask, Task, TaskType } from '@/lib/api';
-import { useTaskSocket, TaskCompletedEvent } from '@/hooks/useTaskSocket';
+import { useTaskSocket, TaskCompletedEvent, SubtaskProgressEvent } from '@/hooks/useTaskSocket';
+import { TaskTree } from '@/components/tasks/TaskTree';
 
 interface SourceRef {
   title: string;
   url: string;
+}
+
+interface SubtaskView {
+  subtaskId: string;
+  agentType: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  prompt: string;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
 }
 
 interface FeedItem {
@@ -19,38 +29,72 @@ interface FeedItem {
   sources?: SourceRef[];
   fromCache?: boolean;
   error?: string;
+  subtasks: Record<string, SubtaskView>;
 }
 
 const TASK_TYPES: { value: TaskType; label: string }[] = [
-  { value: 'DIRECTOR', label: 'Director (echo de prueba)' },
+  { value: 'DIRECTOR', label: 'Director (descompone y delega)' },
   { value: 'RESEARCH', label: 'Investigador (búsqueda web real)' },
+  { value: 'ANALYSIS', label: 'Analista (genera y ejecuta código)' },
 ];
+
+const PLACEHOLDERS: Record<TaskType, string> = {
+  DIRECTOR: 'Ej: Analiza el mercado cripto en Colombia y calcula proyecciones de adopción',
+  RESEARCH: 'Ej: Analiza el mercado de criptomonedas en Colombia 2026',
+  ANALYSIS: 'Ej: Calcula métricas de crecimiento esperado para un e-commerce con 1000 usuarios/mes',
+  PRESENTATION: '',
+  WEBSITE: '',
+};
 
 export default function DashboardPage() {
   const [prompt, setPrompt] = useState('');
-  const [taskType, setTaskType] = useState<TaskType>('RESEARCH');
+  const [taskType, setTaskType] = useState<TaskType>('DIRECTOR');
   const [submitting, setSubmitting] = useState(false);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const { connected } = useTaskSocket((event: TaskCompletedEvent) => {
-    const result = (event.result ?? {}) as Record<string, unknown>;
-    setFeed((prev) =>
-      prev.map((item) =>
-        item.taskId === event.taskId
-          ? {
-              ...item,
-              status: event.status as string,
-              summary: result.summary as string | undefined,
-              keyFindings: result.key_findings as string[] | undefined,
-              sources: result.sources as SourceRef[] | undefined,
-              fromCache: result.fromCache as boolean | undefined,
-              error: event.error as string | undefined,
-            }
-          : item,
-      ),
-    );
-  });
+  const { connected } = useTaskSocket(
+    (event: TaskCompletedEvent) => {
+      const result = (event.result ?? {}) as Record<string, unknown>;
+      setFeed((prev) =>
+        prev.map((item) =>
+          item.taskId === event.taskId
+            ? {
+                ...item,
+                status: event.status as string,
+                summary: result.summary as string | undefined,
+                keyFindings: result.key_findings as string[] | undefined,
+                sources: result.sources as SourceRef[] | undefined,
+                fromCache: result.fromCache as boolean | undefined,
+                error: event.error as string | undefined,
+              }
+            : item,
+        ),
+      );
+    },
+    (progress: SubtaskProgressEvent) => {
+      setFeed((prev) =>
+        prev.map((item) =>
+          item.taskId === progress.taskId
+            ? {
+                ...item,
+                subtasks: {
+                  ...item.subtasks,
+                  [progress.subtaskId]: {
+                    subtaskId: progress.subtaskId,
+                    agentType: progress.agentType,
+                    status: progress.status,
+                    prompt: progress.prompt,
+                    result: progress.result,
+                    error: progress.error,
+                  },
+                },
+              }
+            : item,
+        ),
+      );
+    },
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,7 +106,7 @@ export default function DashboardPage() {
     try {
       const task: Task = await createTask({ type: taskType, prompt });
       setFeed((prev) => [
-        { taskId: task.id, prompt: task.prompt, type: taskType, status: 'PROCESSING' },
+        { taskId: task.id, prompt: task.prompt, type: taskType, status: 'PROCESSING', subtasks: {} },
         ...prev,
       ]);
       setPrompt('');
@@ -79,7 +123,7 @@ export default function DashboardPage() {
         <header className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Prompt Maestro</h1>
-            <p className="text-sm text-zinc-500">Sprint 2 — Agente Investigador</p>
+            <p className="text-sm text-zinc-500">Sprint 3 — Director multiagente</p>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span
@@ -90,7 +134,7 @@ export default function DashboardPage() {
         </header>
 
         <form onSubmit={handleSubmit} className="mb-8">
-          <div className="mb-2 flex gap-2">
+          <div className="mb-2 flex flex-wrap gap-2">
             {TASK_TYPES.map((t) => (
               <button
                 key={t.value}
@@ -110,11 +154,7 @@ export default function DashboardPage() {
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={
-                taskType === 'RESEARCH'
-                  ? 'Ej: Analiza el mercado de criptomonedas en Colombia 2026'
-                  : 'Describe un objetivo para el Agente Director...'
-              }
+              placeholder={PLACEHOLDERS[taskType]}
               rows={3}
               className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-600"
             />
@@ -155,6 +195,10 @@ export default function DashboardPage() {
                     <StatusBadge status={item.status} />
                   </div>
                 </div>
+
+                {Object.keys(item.subtasks).length > 0 && (
+                  <TaskTree subtasks={Object.values(item.subtasks)} />
+                )}
 
                 {item.summary && (
                   <p className="mt-2 text-sm text-zinc-200">{item.summary}</p>

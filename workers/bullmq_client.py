@@ -82,3 +82,14 @@ class BullMQConsumer:
         self.redis.set(result_key, json.dumps(result), ex=3600)  # expira en 1h
         self.redis.publish("task-completed", json.dumps({"taskId": task_id}))
         logger.info(f"Resultado publicado para taskId={task_id}")
+
+    def publish_progress(self, event: dict):
+        """
+        Publica un evento de progreso de subtarea (ver models.SubTaskProgressEvent)
+        en un canal separado de 'task-completed'. A diferencia del resultado
+        final, este evento no se persiste en una clave con TTL — es un
+        stream efímero; si NestJS no está escuchando en el momento exacto,
+        el evento se pierde (aceptable: el frontend siempre puede pedir el
+        estado final consolidado vía GET /api/tasks/:id).
+        """
+        self.redis.publish("task-progress", json.dumps(event))

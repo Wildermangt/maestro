@@ -12,11 +12,26 @@ export interface TaskCompletedEvent {
   [key: string]: unknown;
 }
 
-export function useTaskSocket(onTaskCompleted: (event: TaskCompletedEvent) => void) {
+export interface SubtaskProgressEvent {
+  taskId: string;
+  subtaskId: string;
+  agentType: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  prompt: string;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
+export function useTaskSocket(
+  onTaskCompleted: (event: TaskCompletedEvent) => void,
+  onSubtaskProgress?: (event: SubtaskProgressEvent) => void,
+) {
   const [connected, setConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
-  const callbackRef = useRef(onTaskCompleted);
-  callbackRef.current = onTaskCompleted;
+  const completedRef = useRef(onTaskCompleted);
+  completedRef.current = onTaskCompleted;
+  const progressRef = useRef(onSubtaskProgress);
+  progressRef.current = onSubtaskProgress;
 
   useEffect(() => {
     const socket = io(`${WS_URL}/tasks`, {
@@ -26,7 +41,10 @@ export function useTaskSocket(onTaskCompleted: (event: TaskCompletedEvent) => vo
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
     socket.on('task:completed', (event: TaskCompletedEvent) => {
-      callbackRef.current(event);
+      completedRef.current(event);
+    });
+    socket.on('task:subtask-progress', (event: SubtaskProgressEvent) => {
+      progressRef.current?.(event);
     });
 
     socketRef.current = socket;

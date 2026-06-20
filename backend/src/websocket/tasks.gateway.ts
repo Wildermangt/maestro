@@ -36,4 +36,12 @@ export class TasksGateway implements OnGatewayConnection, OnGatewayDisconnect {
   emitTaskCompleted(taskId: string, payload: Record<string, unknown>) {
     this.server.emit('task:completed', { taskId, ...payload });
   }
+
+  /**
+   * Progreso de una subtarea individual del Director (Sprint 3).
+   * Payload shape: ver models.SubTaskProgressEvent en el worker Python.
+   */
+  emitSubtaskProgress(payload: Record<string, unknown>) {
+    this.server.emit('task:subtask-progress', payload);
+  }
 }

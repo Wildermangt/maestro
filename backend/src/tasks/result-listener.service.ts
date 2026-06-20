@@ -5,12 +5,17 @@ import { TasksService } from './tasks.service';
 import { TasksGateway } from '../websocket/tasks.gateway';
 
 /**
- * El worker Python publica en el canal 'task-completed' cuando termina
- * un job (ver workers/bullmq_client.py -> publish_result).
- * Este servicio escucha ese canal con una conexión Redis dedicada
+ * El worker Python publica en dos canales pub/sub de Redis:
+ *  - 'task-completed': cuando un job (DIRECTOR, RESEARCH, ANALYSIS) termina
+ *    por completo. Ver workers/bullmq_client.py -> publish_result.
+ *  - 'task-progress': cada vez que una subtarea del Director cambia de
+ *    estado (PENDING -> RUNNING -> COMPLETED/FAILED). Ver publish_progress.
+ *    Este evento NO se persiste en Redis con TTL — es efímero, solo para
+ *    que el frontend pinte el árbol de subtareas en tiempo real.
+ *
+ * Este servicio escucha ambos canales con una conexión Redis dedicada
  * (las suscripciones pub/sub bloquean la conexión para otros comandos),
- * lee el resultado completo desde la clave 'result:{taskId}',
- * actualiza Postgres, y notifica al frontend por WebSocket.
+ * y reenvía cada uno al frontend por su evento WebSocket correspondiente.
  */
 @Injectable()
 export class ResultListenerService implements OnModuleInit, OnModuleDestroy {
@@ -30,18 +35,34 @@ export class ResultListenerService implements OnModuleInit, OnModuleDestroy {
     this.subscriber = new Redis(redisUrl);
     this.reader = new Redis(redisUrl);
 
-    this.subscriber.subscribe('task-completed', (err) => {
+    this.subscriber.subscribe('task-completed', 'task-progress', (err) => {
       if (err) {
-        this.logger.error(`No se pudo suscribir a 'task-completed': ${err.message}`);
+        this.logger.error(`No se pudo suscribir a los canales de tareas: ${err.message}`);
         return;
       }
-      this.logger.log(`Suscrito al canal 'task-completed'`);
+      this.logger.log(`Suscrito a 'task-completed' y 'task-progress'`);
     });
 
     this.subscriber.on('message', async (channel, message) => {
-      if (channel !== 'task-completed') return;
-      await this.handleTaskCompleted(message);
+      if (channel === 'task-completed') {
+        await this.handleTaskCompleted(message);
+      } else if (channel === 'task-progress') {
+        this.handleTaskProgress(message);
+      }
     });
+  }
+
+  private handleTaskProgress(message: string) {
+    let event: Record<string, unknown>;
+
+    try {
+      event = JSON.parse(message);
+    } catch {
+      this.logger.error(`Mensaje inválido en 'task-progress': ${message}`);
+      return;
+    }
+
+    this.gateway.emitSubtaskProgress(event);
   }
 
   private async handleTaskCompleted(message: string) {

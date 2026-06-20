@@ -58,3 +58,55 @@ class ResearchOutput(BaseModel):
     summary: str
     key_findings: list[str] = Field(default_factory=list)
     sources: list[SourceRef] = Field(default_factory=list)
+
+
+class AnalysisOutput(BaseModel):
+    """Shape estructurado que el Agente Analista produce."""
+    summary: str
+    metrics: dict = Field(default_factory=dict)
+    insights: list[str] = Field(default_factory=list)
+
+
+# --- Modelos del Agente Director (Sprint 3) ---
+
+class SubTaskStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class SubTask(BaseModel):
+    """
+    Una subtarea dentro del plan del Director. `dependsOn` lista los
+    `id` de otras subtareas que deben completarse antes — eso es lo
+    que el grafo usa para decidir qué puede correr en paralelo.
+    """
+    id: str
+    agentType: TaskType
+    prompt: str
+    dependsOn: list[str] = Field(default_factory=list)
+    status: SubTaskStatus = SubTaskStatus.PENDING
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+
+class DirectorPlan(BaseModel):
+    """Plan que el LLM genera al descomponer el objetivo del usuario."""
+    subtasks: list[SubTask]
+
+
+class SubTaskProgressEvent(BaseModel):
+    """
+    Evento que el Director publica cada vez que una subtarea cambia
+    de estado. NestJS reenvía esto por WebSocket tal cual para que el
+    frontend pinte el árbol de subtareas en tiempo real, sin esperar
+    a que el Director termine todo el plan.
+    """
+    taskId: str  # taskId de la tarea DIRECTOR padre
+    subtaskId: str
+    agentType: TaskType
+    status: SubTaskStatus
+    prompt: str
+    result: Optional[dict] = None
+    error: Optional[str] = None

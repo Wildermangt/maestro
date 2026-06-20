@@ -89,9 +89,61 @@ estructuras Redis de BullMQ. Funciona para jobs simples sin prioridad/delay.
 Si en el futuro usas esas opciones al encolar desde NestJS, hay que migrar
 a la librería `bullmq-python` — está documentado en ese archivo.
 
-### Siguiente paso (Sprint 3)
+### Siguiente paso (Sprint 3) ✅ implementado
 
-Agente Director real con LangGraph: descomponer un objetivo complejo en
-subtareas y delegar al Investigador (y a los agentes que falten: Analista,
-Escritor, etc.) en paralelo o secuencial según dependencias.
+El Agente Director ahora usa LangGraph de verdad: descompone el objetivo
+del usuario en subtareas (`RESEARCH` y/o `ANALYSIS`), las ejecuta **en
+paralelo cuando no dependen entre sí** (oleadas respetando `dependsOn`),
+y consolida un resumen ejecutivo final con Claude. Ver `workers/agents/director.py`.
+
+Se agregó también el **Agente Analista** (`workers/agents/analyst.py`):
+genera código Python con Claude, lo ejecuta en un sandbox aislado
+(`workers/tools/code_executor.py` — subprocess con timeout de 30s y
+sin acceso a las variables de entorno del worker, así el código generado
+nunca puede leer tus API keys), y si falla, le pide a Claude que lo
+corrija una vez antes de rendirse.
+
+### Árbol de subtareas en tiempo real
+
+Cada vez que una subtarea cambia de estado (PENDING → RUNNING →
+COMPLETED/FAILED), el Director publica un evento en el canal Redis
+`task-progress` (separado de `task-completed`). NestJS lo reenvía por
+WebSocket (`task:subtask-progress`) y el frontend pinta el árbol en
+vivo — sin esperar a que el Director termine todo el plan.
+
+### Probar el Director
+
+```bash
+docker compose up --build
+```
+
+```bash
+curl -X POST http://localhost:4000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"type": "DIRECTOR", "prompt": "Investiga el mercado cripto en Colombia y calcula proyecciones de adopción para 2027"}'
+```
+
+En el dashboard verás aparecer las subtareas (Investigador, Analista)
+con su estado en vivo, y al final el resumen consolidado.
+
+### Decisiones de diseño de este sprint
+
+- **Los sub-agentes se invocan in-process, no se vuelven a encolar en
+  BullMQ.** Encolar de vuelta crearía riesgo de deadlock con un solo
+  worker (el worker esperando su propio job). Si más adelante se escalan
+  múltiples workers y se quiere repartir subtareas entre ellos, esto
+  hay que revisarlo — está documentado en `director.py`.
+- **El sandbox del Analista es un subprocess aislado, no Docker real
+  todavía.** Cumple la regla de seguridad central (sin acceso a env vars,
+  timeout estricto), pero no aísla a nivel de sistema de archivos/red
+  como un contenedor. Mover a Docker real es trabajo de Sprint 4.
+- **Paralelismo con ThreadPoolExecutor**, no asyncio. Los agentes hacen
+  llamadas HTTP bloqueantes (requests a Tavily/Firecrawl/Anthropic), así
+  que hilos son más simples aquí que reescribir todo a async/await.
+
+### Siguiente paso (Sprint 4)
+
+Agentes Presentador (python-pptx) y Diseñador Web (deploy a Vercel),
+y mover el sandbox del Analista a un contenedor Docker efímero real.
+
 
