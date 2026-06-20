@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Prisma } from '@prisma/client';
 import { trace, propagation, context } from '@opentelemetry/api';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -25,7 +26,11 @@ export class TasksService {
         userId,
         type: dto.type,
         prompt: dto.prompt,
-        metadata: dto.metadata ?? {},
+        // Cast explícito: el cliente Prisma generado espera el tipo propio
+        // `InputJsonValue` para columnas Json, no un Record<string, unknown>
+        // genérico de TypeScript. Son estructuralmente compatibles (ambos
+        // son JSON serializable), pero TS no lo infiere automáticamente.
+        metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
         status: 'PENDING',
       },
     });
