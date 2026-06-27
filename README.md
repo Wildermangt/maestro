@@ -308,4 +308,86 @@ corresponde:
   (hoy todo el plan de un Director corre en el worker que tomó ese
   job — ver limitación documentada en `agents/director.py`).
 
+## Sprint 6 — Canales externos: Telegram, Gmail, Outlook
+
+Más allá de los 5 sprints originales: el sistema ahora puede crear
+tareas y notificar resultados desde tres canales adicionales al
+dashboard web, todos siguiendo el mismo patrón de diseño:
+
+- **Nunca encolan directo en Redis** — crean tareas llamando a
+  `POST /api/tasks` del backend, igual que el frontend. NestJS sigue
+  siendo la única fuente de verdad.
+- **Se degradan con gracia** — sin las credenciales de un canal, ese
+  canal simplemente no arranca (queda en `None`), y el resto del
+  worker sigue funcionando con normalidad.
+- **Corren en hilos separados** (`threading`) del loop principal de
+  BullMQ, porque hacen long-polling/polling bloqueante.
+
+### Telegram (`workers/channels/telegram.py`)
+
+Bot restringido a un único `TELEGRAM_CHAT_ID` — cualquier otro chat
+es ignorado en silencio (no se le confirma que el bot existe). Long
+polling, sin necesidad de exponer el backend a internet.
+
+### Gmail y Outlook (`workers/channels/gmail.py`, `outlook.py`)
+
+Lectura por polling (cada `GMAIL_POLL_INTERVAL_SECONDS` /
+`OUTLOOK_POLL_INTERVAL_SECONDS`, default 60s) + envío, vía OAuth2.
+
+⚠️ **Decisión de seguridad obligatoria**: ambos canales exigen una
+lista de remitentes permitidos (`GMAIL_ALLOWED_SENDERS` /
+`OUTLOOK_ALLOWED_SENDERS`) — sin ella, el canal se niega a arrancar.
+Sin este filtro, cualquiera que conociera tu dirección de correo
+podría crear tareas a tu costo (tokens de LLM, llamadas a Tavily/
+Firecrawl) simplemente escribiéndote un correo.
+
+**Por qué OAuth2 y no contraseñas de aplicación**: Google las está
+retirando progresivamente incluso para cuentas personales con 2FA
+correctamente configurada — en la práctica, dejaron de estar
+disponibles para muchas cuentas sin un patrón claro y documentado de
+cuándo. OAuth2 es el camino que ambos proveedores garantizan que sigue
+funcionando.
+
+**Cómo obtener las credenciales** — ambos requieren un script de
+autorización que se corre **una sola vez, localmente, fuera de
+Docker** (no tiene sentido abrir un navegador real dentro de un
+contenedor):
+
+```bash
+cd workers
+pip install google-auth-oauthlib --break-system-packages
+python channels/oauth_scripts/gmail_authorize.py /ruta/al/client_secret.json
+
+pip install msal --break-system-packages
+python channels/oauth_scripts/outlook_authorize.py <application-client-id>
+```
+
+Cada script imprime las variables exactas a copiar al `.env`. Ver los
+comentarios extensos en `.env.example` (sección "Sprint 6") para los
+pasos previos completos en Google Cloud Console / Azure Portal.
+
+### Limitación conocida y documentada: rotación de refresh token en Outlook
+
+Microsoft puede rotar el refresh token en cualquier uso. El canal lo
+adopta en memoria para la sesión actual del contenedor, pero **no lo
+persiste de vuelta al `.env`** — si el contenedor se reinicia después
+de una rotación y antes de que actualices el `.env` a mano, tendrás
+que re-autorizar con el script. Aceptable para un solo usuario; si
+esto se lleva a producción con más usuarios, vale la pena resolverlo
+escribiendo el token rotado a un almacén persistente.
+
+### Bug encontrado y corregido en este sprint
+
+Las variables opcionales `GMAIL_POLL_INTERVAL_SECONDS` y
+`OUTLOOK_POLL_INTERVAL_SECONDS`, al pasarse desde `docker-compose.yml`
+con la sintaxis `${VAR:-}` (vacío si no está en `.env`), llegaban como
+cadena vacía `""` al contenedor — no como variable ausente. El patrón
+`int(os.getenv("X", "60"))` solo usa el default cuando la variable
+**no existe**, no cuando existe pero está vacía, así que esto habría
+crasheado con `ValueError` en cualquier despliegue donde el usuario no
+llenara esas variables opcionales. Corregido a
+`int(os.getenv("X") or 60)`, que cubre ambos casos — verificado con
+los tres escenarios (ausente, vacía, con valor).
+
+
 

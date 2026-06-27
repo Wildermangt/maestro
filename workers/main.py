@@ -19,6 +19,7 @@ el resto del worker (una sola instancia de cada agente, no una por
 cada subtarea).
 """
 import logging
+import threading
 
 from agents.analyst import AnalystAgent
 from agents.designer import DesignerAgent
@@ -26,6 +27,9 @@ from agents.director import DirectorAgent
 from agents.presenter import PresenterAgent
 from agents.researcher import ResearcherAgent
 from bullmq_client import BullMQConsumer
+from channels.gmail import GmailChannel
+from channels.outlook import OutlookChannel
+from channels.telegram import TelegramChannel
 from config import POLL_TIMEOUT_SECONDS, QUEUE_NAME, REDIS_URL
 from models import SubTask, TaskJob, TaskResult, TaskStatus, TaskType
 from tracing import extract_context, get_tracer, setup_telemetry
@@ -51,6 +55,29 @@ AGENT_FACTORIES = {
 DELEGABLE_TYPES = [TaskType.RESEARCH, TaskType.ANALYSIS, TaskType.PRESENTATION, TaskType.WEBSITE]
 
 _agent_cache: dict = {}
+
+# Canal de Telegram: opcional. Si TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID no
+# están configuradas, simplemente queda en None y el resto del worker
+# sigue funcionando sin esa integración — mismo patrón de degradación
+# que el resto de agentes con API keys opcionales.
+try:
+    _telegram_channel: TelegramChannel | None = TelegramChannel()
+except RuntimeError as exc:
+    logger.info(f"Canal de Telegram deshabilitado: {exc}")
+    _telegram_channel = None
+
+# Canales de email: mismo patrón de degradación opcional que Telegram.
+try:
+    _gmail_channel: GmailChannel | None = GmailChannel()
+except RuntimeError as exc:
+    logger.info(f"Canal de Gmail deshabilitado: {exc}")
+    _gmail_channel = None
+
+try:
+    _outlook_channel: OutlookChannel | None = OutlookChannel()
+except RuntimeError as exc:
+    logger.info(f"Canal de Outlook deshabilitado: {exc}")
+    _outlook_channel = None
 
 
 def get_agent(task_type: TaskType):
@@ -158,14 +185,74 @@ def _process_job_inner(job: TaskJob, job_id: str | None, consumer: BullMQConsume
     span.set_attribute("maestro.status", result.status.value)
     consumer.publish_result(job.taskId, result.model_dump())
 
+    _notify_source_channel(job, result)
+
     if job_id:
         consumer.mark_active_done(job_id)
+
+
+def _notify_source_channel(job: TaskJob, result: TaskResult) -> None:
+    """
+    Si la tarea se originó en un canal de mensajería o email (Telegram,
+    Gmail, Outlook), le envía el resultado de vuelta por ese mismo canal.
+    La notificación por WebSocket (vía NestJS) ocurre siempre y de forma
+    independiente — esto es un AVISO adicional, no reemplaza el flujo normal.
+    """
+    source = job.metadata.get("sourceChannel")
+    if source is None:
+        return
+
+    summary = result.result.get("summary") if isinstance(result.result, dict) else None
+    if result.status == TaskStatus.FAILED:
+        text = f"⚠️ La tarea falló: {result.error or 'sin detalle'}"
+    elif summary:
+        text = f"✅ Listo:\n\n{summary}"
+    else:
+        text = f"✅ Tarea completada (status={result.status.value})."
+
+    try:
+        if source == "telegram" and _telegram_channel is not None:
+            _telegram_channel.send_message(text)
+        elif source == "gmail" and _gmail_channel is not None:
+            sender_address = job.metadata.get("sourceAddress")
+            if sender_address:
+                _gmail_channel.send_message(sender_address, "Resultado de tu tarea — Prompt Maestro", text)
+        elif source == "outlook" and _outlook_channel is not None:
+            sender_address = job.metadata.get("sourceAddress")
+            if sender_address:
+                _outlook_channel.send_message(sender_address, "Resultado de tu tarea — Prompt Maestro", text)
+    except Exception:
+        logger.exception(f"No se pudo notificar el resultado por canal '{source}'")
 
 
 def main() -> None:
     setup_telemetry()
     logger.info(f"Worker iniciado. Conectando a {REDIS_URL}, escuchando cola '{QUEUE_NAME}'")
     consumer = BullMQConsumer(redis_url=REDIS_URL, queue_name=QUEUE_NAME)
+
+    if _telegram_channel is not None:
+        # Hilo independiente: el long-polling de Telegram bloquea por hasta
+        # 30s en cada llamada (ver TELEGRAM_POLL_TIMEOUT_SECONDS), así que
+        # correrlo en el mismo hilo que el loop principal pausaría el
+        # procesamiento de jobs de BullMQ durante esas esperas. daemon=True
+        # para que este hilo no impida que el proceso termine si el loop
+        # principal se detiene.
+        telegram_thread = threading.Thread(
+            target=_telegram_channel.run_forever, daemon=True, name="telegram-channel"
+        )
+        telegram_thread.start()
+
+    if _gmail_channel is not None:
+        gmail_thread = threading.Thread(
+            target=_gmail_channel.run_forever, daemon=True, name="gmail-channel"
+        )
+        gmail_thread.start()
+
+    if _outlook_channel is not None:
+        outlook_thread = threading.Thread(
+            target=_outlook_channel.run_forever, daemon=True, name="outlook-channel"
+        )
+        outlook_thread.start()
 
     while True:
         job_payload = consumer.fetch_job(timeout=POLL_TIMEOUT_SECONDS)
