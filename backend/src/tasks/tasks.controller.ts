@@ -40,6 +40,43 @@ export class TasksController {
     return this.tasksService.findAll();
   }
 
+  @Post(':id/approve')
+  @ApiOperation({
+    summary: 'Aprobar el plan propuesto y ejecutarlo',
+    description:
+      'Solo para tareas en AWAITING_APPROVAL. Envía `subtasks` para ejecutar una ' +
+      'versión editada del plan: quitar pasos que no sirven o corregir un prompt ' +
+      'antes de gastar un solo token en ellos.',
+  })
+  @ApiResponse({ status: 400, description: 'La tarea no está esperando aprobación o no hay plan' })
+  aprobar(@Param('id') id: string, @Body() body: { subtasks?: unknown[] }) {
+    return this.tasksService.aprobarPlan(id, body?.subtasks);
+  }
+
+  @Post(':id/resume')
+  @ApiOperation({
+    summary: 'Reanudar reintentando solo las subtareas fallidas',
+    description:
+      'Las subtareas completadas se conservan con su resultado, así que no se ' +
+      'vuelve a pagar por el trabajo que ya salió bien.',
+  })
+  @ApiResponse({ status: 400, description: 'No hay subtareas fallidas que reintentar' })
+  reanudar(@Param('id') id: string) {
+    return this.tasksService.reanudar(id);
+  }
+
+  @Post(':id/cancel')
+  @ApiOperation({
+    summary: 'Cancelar una tarea en curso',
+    description:
+      'Cancelación cooperativa: el worker se detiene entre oleadas de subtareas ' +
+      'y conserva lo ya completado. Una subtarea en curso termina — su llamada al ' +
+      'LLM ya está pagada. Después puedes reanudar con /resume.',
+  })
+  cancelar(@Param('id') id: string) {
+    return this.tasksService.cancelar(id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener una tarea por id, incluyendo sus artefactos' })
   @ApiParam({ name: 'id', description: 'UUID de la tarea' })

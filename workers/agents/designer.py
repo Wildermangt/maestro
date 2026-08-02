@@ -41,7 +41,7 @@ class DesignerAgent(BaseAgent):
     name = "designer"
 
     def __init__(self):
-        self.llm = get_llm_client(provider="claude")
+        self.llm = get_llm_client()
 
     def run(self, job: TaskJob) -> TaskResult:
         prompt = job.prompt

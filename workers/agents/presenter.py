@@ -55,7 +55,7 @@ class PresenterAgent(BaseAgent):
     name = "presenter"
 
     def __init__(self):
-        self.llm = get_llm_client(provider="claude")
+        self.llm = get_llm_client()
 
     def run(self, job: TaskJob) -> TaskResult:
         prompt = job.prompt
@@ -109,7 +109,7 @@ class PresenterAgent(BaseAgent):
         )
 
     def _generate_plan(self, user_message: str) -> PresentationPlan:
-        raw = self.llm.complete(system=SYSTEM_PROMPT, user=user_message, max_tokens=2000)
+        raw = self.llm.complete(system=SYSTEM_PROMPT, user=user_message, max_tokens=2000, json_mode=True)
         cleaned = self._strip_markdown_fence(raw)
         parsed = json.loads(cleaned)
         return PresentationPlan.model_validate(parsed)

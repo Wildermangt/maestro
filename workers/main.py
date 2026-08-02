@@ -24,8 +24,14 @@ import threading
 from agents.analyst import AnalystAgent
 from agents.designer import DesignerAgent
 from agents.director import DirectorAgent
+from agents.enricher import EnricherAgent
+from agents.extractor import ExtractorAgent
+from agents.ingest import IngestAgent
 from agents.presenter import PresenterAgent
 from agents.researcher import ResearcherAgent
+from agents.spreadsheet import SpreadsheetAgent
+from agents.verifier import VerifierAgent
+from agents.writer import WriterAgent
 from bullmq_client import BullMQConsumer
 from channels.gmail import GmailChannel
 from channels.outlook import OutlookChannel
@@ -46,13 +52,33 @@ AGENT_FACTORIES = {
     TaskType.ANALYSIS: AnalystAgent,
     TaskType.PRESENTATION: PresenterAgent,
     TaskType.WEBSITE: DesignerAgent,
+    TaskType.EXTRACTION: ExtractorAgent,
+    TaskType.ENRICHMENT: EnricherAgent,
+    TaskType.VERIFICATION: VerifierAgent,
+    TaskType.DOCUMENT: WriterAgent,
+    TaskType.SPREADSHEET: SpreadsheetAgent,
+    TaskType.INGEST: IngestAgent,
 }
 
-# Tipos que el Director puede delegar in-process. PRESENTATION y WEBSITE
-# se agregan aquí (Sprint 4) además de RESEARCH/ANALYSIS (Sprint 3) —
-# así un objetivo como "investiga X y crea una presentación" puede
-# descomponerse en RESEARCH -> PRESENTATION con dependsOn.
-DELEGABLE_TYPES = [TaskType.RESEARCH, TaskType.ANALYSIS, TaskType.PRESENTATION, TaskType.WEBSITE]
+# Tipos que el Director puede delegar in-process.
+#
+# DIRECTOR está incluido a propósito: habilita la descomposición
+# recursiva, con la profundidad acotada por MAX_DECOMPOSITION_DEPTH y
+# compartiendo el presupuesto de la tarea raíz (ver agents/director.py).
+# Sin ese tope, un objetivo grande podría expandirse sin control.
+DELEGABLE_TYPES = [
+    TaskType.RESEARCH,
+    TaskType.ANALYSIS,
+    TaskType.PRESENTATION,
+    TaskType.WEBSITE,
+    TaskType.EXTRACTION,
+    TaskType.ENRICHMENT,
+    TaskType.VERIFICATION,
+    TaskType.DOCUMENT,
+    TaskType.SPREADSHEET,
+    TaskType.INGEST,
+    TaskType.DIRECTOR,
+]
 
 _agent_cache: dict = {}
 

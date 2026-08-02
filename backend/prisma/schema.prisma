@@ -8,12 +8,14 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
+  id        String       @id @default(uuid())
+  email     String       @unique
   name      String?
   projects  Project[]
   tasks     Task[]
-  createdAt DateTime  @default(now())
+  entities  Entity[]
+  notes     MemoryNote[]
+  createdAt DateTime     @default(now())
 }
 
 model Project {
@@ -49,6 +51,16 @@ enum TaskType {
   PRESENTATION
   WEBSITE
   DIRECTOR
+  // Agentes añadidos para soportar objetivos grandes. El worker los usa
+  // como agentType de subtarea, y también se pueden pedir directamente
+  // vía POST /api/tasks — por eso deben existir en este enum: el DTO
+  // valida `type` contra él (ver dto/create-task.dto.ts).
+  EXTRACTION
+  ENRICHMENT
+  VERIFICATION
+  DOCUMENT
+  SPREADSHEET
+  INGEST
 }
 
 enum TaskStatus {
@@ -57,6 +69,82 @@ enum TaskStatus {
   COMPLETED
   FAILED
   PARTIAL
+  /// El plan está listo y espera aprobación del usuario. Nada se ha
+  /// ejecutado todavía, así que aprobar o descartar no cuesta cuota.
+  AWAITING_APPROVAL
+  /// Detenida por el usuario. Lo completado se conserva y es reanudable.
+  CANCELLED
+}
+
+/// Memoria de entidades: empresas (u otras entidades) que los agentes han
+/// encontrado, acumuladas entre ejecuciones.
+///
+/// Sin esto, cada tarea empieza de cero: se vuelven a buscar las mismas
+/// empresas, no se sabe a cuáles ya se contactó, y el trabajo de una
+/// ejecución no le sirve a la siguiente.
+///
+/// La deduplicación es por (userId, domain): el dominio del sitio web es
+/// el identificador más estable de una empresa — el nombre varía
+/// ("MPS", "MPS Mayorista", "MPS Mayorista S.A.S.") pero mps.com.co no.
+model Entity {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  /// Dominio normalizado (sin protocolo ni www). Clave de deduplicación.
+  domain String
+  name   String
+
+  sector   String?
+  city     String?
+  website  String?
+  phone    String?
+  email    String?
+  address  String?
+  products String?
+  notes    String?
+
+  /// Qué tan buen prospecto es, si un agente lo calificó (0.0 a 1.0).
+  score  Float?
+  status EntityStatus @default(NUEVO)
+
+  /// De qué URL salió cada campo, para poder verificar un dato dudoso
+  /// y para cumplir con el deber de informar el origen (Ley 1581).
+  sources Json?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+  /// Cuántas ejecuciones distintas la han encontrado. Una empresa que
+  /// aparece una y otra vez suele ser más relevante en su sector.
+  timesSeen   Int      @default(1)
+
+  @@unique([userId, domain])
+  @@index([userId, status])
+}
+
+enum EntityStatus {
+  NUEVO
+  CALIFICADO
+  CONTACTADO
+  RESPONDIO
+  DESCARTADO
+}
+
+/// Memoria de hechos: lo que el usuario le ha dicho al sistema y debe
+/// recordar entre tareas (perfil de cliente ideal, qué ofrece, a quién no
+/// contactar). Se inyecta como contexto al planificar.
+model MemoryNote {
+  id      String @id @default(uuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+  /// Identificador corto y estable: "cliente_ideal", "servicios", "excluir".
+  key     String
+  value   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
 }
 
 model Artifact {

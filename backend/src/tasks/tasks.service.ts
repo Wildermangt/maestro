@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
@@ -9,14 +11,30 @@ import { CreateTaskDto } from './dto/create-task.dto';
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 @Injectable()
-export class TasksService {
+export class TasksService implements OnModuleDestroy {
   private readonly logger = new Logger(TasksService.name);
   private readonly tracer = trace.getTracer('maestro-backend');
 
+  /**
+   * Conexión propia a Redis para la señal de cancelación.
+   *
+   * No se reusa `tasksQueue.client`: BullMQ lo tipa como `IRedisClient`,
+   * una interfaz reducida que no expone `expire` ni el modo 'EX' de `set`.
+   * Mismo patrón que ResultListenerService, que también abre la suya.
+   */
+  private readonly redis: Redis;
+
   constructor(
     private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
     @InjectQueue('tasks-queue') private readonly tasksQueue: Queue,
-  ) {}
+  ) {
+    this.redis = new Redis(this.config.get<string>('REDIS_URL', 'redis://localhost:6379'));
+  }
+
+  onModuleDestroy() {
+    this.redis?.disconnect();
+  }
 
   async create(dto: CreateTaskDto) {
     const userId = dto.userId ?? TEST_USER_ID;
@@ -70,6 +88,107 @@ export class TasksService {
     return task;
   }
 
+  /**
+   * Re-encola una tarea con metadata extra, reusando exactamente el mismo
+   * camino que `create` (misma cola, misma propagación de trace). Es la
+   * base de aprobar, reanudar y reintentar: la tarea es la misma fila de
+   * Postgres, solo cambia el contexto con el que el worker la recibe.
+   */
+  private async reencolar(taskId: string, extra: Record<string, unknown>) {
+    const task = await this.findOne(taskId);
+
+    const traceCarrier: Record<string, string> = {};
+    propagation.inject(context.active(), traceCarrier);
+
+    await this.tasksQueue.add('process-task', {
+      taskId: task.id,
+      type: task.type,
+      prompt: task.prompt,
+      userId: task.userId,
+      metadata: { ...((task.metadata as object) ?? {}), ...extra },
+      traceContext: traceCarrier,
+    });
+
+    return this.prisma.task.update({
+      where: { id: task.id },
+      data: { status: 'PROCESSING', completedAt: null },
+    });
+  }
+
+  /**
+   * Aprueba el plan propuesto y lo ejecuta. `subtasks` permite mandar una
+   * versión editada: quitar subtareas que no sirven, corregir un prompt o
+   * cambiar el agente asignado antes de gastar un solo token en ellas.
+   */
+  async aprobarPlan(taskId: string, subtasks?: unknown[]) {
+    const task = await this.findOne(taskId);
+
+    if (task.status !== 'AWAITING_APPROVAL') {
+      throw new BadRequestException(
+        `La tarea está en estado ${task.status}; solo se puede aprobar una que esté en AWAITING_APPROVAL.`,
+      );
+    }
+
+    // Sin plan editado se usa el que el Director propuso y quedó guardado
+    // en el resultado.
+    const propuesto = (task.result as { subtasks?: unknown[] } | null)?.subtasks ?? [];
+    const plan = subtasks?.length ? subtasks : propuesto;
+
+    if (!plan.length) {
+      throw new BadRequestException('No hay plan que aprobar: la tarea no propuso subtareas.');
+    }
+
+    this.logger.log(`Plan de la tarea ${taskId} aprobado con ${plan.length} subtarea(s)`);
+    return this.reencolar(taskId, { _plan_aprobado: { subtasks: plan } });
+  }
+
+  /**
+   * Reanuda una tarea reintentando SOLO las subtareas fallidas. Las
+   * completadas se pasan tal cual con su resultado, así que no se vuelve a
+   * pagar por trabajo que ya salió bien.
+   */
+  async reanudar(taskId: string) {
+    const task = await this.findOne(taskId);
+    const subtasks =
+      (task.result as { subtasks?: Array<{ status?: string }> } | null)?.subtasks ?? [];
+
+    if (!subtasks.length) {
+      throw new BadRequestException('La tarea no tiene subtareas que reanudar.');
+    }
+
+    const fallidas = subtasks.filter((s) => s.status === 'FAILED').length;
+    if (!fallidas) {
+      throw new BadRequestException('No hay subtareas fallidas: no hay nada que reanudar.');
+    }
+
+    // Reanudar limpia una cancelación previa; si no, el worker se
+    // detendría de inmediato al ver la señal todavía puesta.
+    await this.limpiarCancelacion(taskId);
+
+    this.logger.log(`Reanudando tarea ${taskId}: ${fallidas} subtarea(s) a reintentar`);
+    return this.reencolar(taskId, { _subtareas_previas: subtasks });
+  }
+
+  /**
+   * Marca la tarea para cancelación. Es cooperativa: el worker la detecta
+   * entre oleadas de subtareas y se detiene de forma ordenada conservando
+   * lo ya completado. Una subtarea en curso termina — su llamada al LLM ya
+   * está pagada, tirarla no ahorra nada.
+   */
+  async cancelar(taskId: string) {
+    await this.findOne(taskId);
+    // La señal caduca sola: si algo falla, no queda puesta para siempre
+    // bloqueando un reintento futuro de la misma tarea.
+    await this.redis.set(`cancel:${taskId}`, '1', 'EX', 3600);
+    this.logger.log(`Tarea ${taskId} marcada para cancelación`);
+    return { taskId, cancelacionSolicitada: true };
+  }
+
+  private async limpiarCancelacion(taskId: string) {
+    const redis = await this.tasksQueue.client;
+    await redis.del(`cancel:${taskId}`);
+  }
+
   async findOne(id: string) {
     const task = await this.prisma.task.findUnique({
       where: { id },
@@ -91,14 +210,24 @@ export class TasksService {
     });
   }
 
-  async markCompleted(taskId: string, result: unknown, status: 'COMPLETED' | 'FAILED' | 'PARTIAL') {
+  async markCompleted(
+    taskId: string,
+    result: unknown,
+    status: 'COMPLETED' | 'FAILED' | 'PARTIAL' | 'AWAITING_APPROVAL' | 'CANCELLED',
+  ) {
+    // AWAITING_APPROVAL no es un final: el plan está listo pero no se ha
+    // ejecutado nada, y la tarea va a seguir cuando el usuario apruebe.
+    // Marcarla con progress 100 y completedAt la haría parecer terminada
+    // en el dashboard y en cualquier consulta por fecha de cierre.
+    const terminada = status !== 'AWAITING_APPROVAL';
+
     return this.prisma.task.update({
       where: { id: taskId },
       data: {
         status,
         result: result as any,
-        progress: 100,
-        completedAt: new Date(),
+        progress: terminada ? 100 : 0,
+        completedAt: terminada ? new Date() : null,
       },
     });
   }

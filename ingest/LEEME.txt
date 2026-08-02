@@ -1,0 +1,2 @@
+﻿Pon aqui los archivos (PDF, Excel, CSV, Word) que quieras que el agente de Ingesta lea.
+Se monta de solo lectura: ningun agente puede modificarlos ni borrarlos.

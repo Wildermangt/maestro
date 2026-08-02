@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maestro — Panel de control</title>
+<style>
+  :root{
+    /* Paleta tomada de la infografía de referencia: papel cálido, tinta
+       marina y bandas pastel. Cada servicio hereda una banda distinta. */
+    --papel:#FBF8F1;
+    --papel-hondo:#F3EEE3;
+    --tinta:#1F3A54;
+    --tinta-media:#4A6178;
+    --tinta-tenue:#8496A6;
+    --linea:#E2D9C8;
+
+    --azul:#A9C6E0;
+    --salvia:#C6D9BE;
+    --crema:#EFE7D6;
+    --durazno:#F5CFA9;
+    --lila:#CFCBE4;
+    --arena:#E4D5BC;
+
+    --activo:#5F8F55;
+    --arrancando:#C68A1E;
+    --detenido:#A9A296;
+    --error:#B4553E;
+
+    --r:14px;
+    --sombra:0 1px 2px rgba(31,58,84,.05), 0 8px 24px -12px rgba(31,58,84,.18);
+    --display:"Segoe UI Variable Display","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
+    --dato:"Cascadia Code","Cascadia Mono",Consolas,"SF Mono",monospace;
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  body{
+    font-family:var(--display);
+    background:var(--papel);
+    color:var(--tinta);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:clamp(16px,4vw,44px);
+  }
+
+  .lienzo{max-width:1080px;margin:0 auto}
+
+  /* ---------------------------------------------------------- encabezado */
+  .cabecera{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:20px;flex-wrap:wrap;
+    padding-bottom:20px;margin-bottom:28px;
+    border-bottom:2px solid var(--linea);
+  }
+  .marca h1{
+    font-size:clamp(30px,5.2vw,46px);
+    font-weight:700;letter-spacing:-.035em;line-height:1;
+  }
+  .marca p{
+    font-family:var(--dato);
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--tinta-tenue);margin-top:8px;
+  }
+
+  .pulso{
+    display:inline-flex;align-items:center;gap:9px;
+    background:#fff;border:1px solid var(--linea);
+    border-radius:999px;padding:8px 16px 8px 12px;
+    font-size:14px;font-weight:600;box-shadow:var(--sombra);
+  }
+  .punto{width:9px;height:9px;border-radius:50%;background:var(--detenido);flex:none}
+  .pulso[data-estado="activo"] .punto{background:var(--activo);box-shadow:0 0 0 4px rgba(95,143,85,.18)}
+  .pulso[data-estado="arrancando"] .punto{background:var(--arrancando);animation:latir 1.1s ease-in-out infinite}
+  .pulso[data-estado="error"] .punto{background:var(--error)}
+  @keyframes latir{50%{opacity:.28;transform:scale(.8)}}
+
+  /* ------------------------------------------------------------ secciones */
+  .seccion{margin-bottom:34px}
+  .rotulo{
+    font-family:var(--dato);
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--tinta-tenue);margin-bottom:14px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .rotulo::after{content:"";flex:1;height:1px;background:var(--linea)}
+
+  /* ------------------------------- FIRMA: la ruta que recorre un encargo */
+  .ruta{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:10px;
+    position:relative;
+  }
+  .parada{
+    background:#fff;border:1px solid var(--linea);border-radius:var(--r);
+    padding:16px 14px 14px;position:relative;overflow:hidden;
+    box-shadow:var(--sombra);
+    transition:transform .35s cubic-bezier(.2,.8,.3,1),border-color .35s;
+  }
+  .parada::before{
+    content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--banda);
+  }
+  .parada[data-estado="activo"]{border-color:rgba(95,143,85,.45);transform:translateY(-3px)}
+  .parada[data-estado="arrancando"]{border-color:rgba(198,138,30,.5)}
+  .parada .n{
+    font-family:var(--dato);font-size:10px;letter-spacing:.16em;
+    color:var(--tinta-tenue);
+  }
+  .parada .titulo{font-size:15px;font-weight:700;letter-spacing:-.02em;margin-top:6px}
+  .parada .detalle{font-family:var(--dato);font-size:11px;color:var(--tinta-media);margin-top:3px}
+  .parada .marca-estado{
+    display:flex;align-items:center;gap:6px;margin-top:12px;
+    font-size:12px;font-weight:600;color:var(--detenido);
+  }
+  .parada[data-estado="activo"] .marca-estado{color:var(--activo)}
+  .parada[data-estado="arrancando"] .marca-estado{color:var(--arrancando)}
+  .parada .marca-estado i{
+    width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;font-style:normal;
+  }
+
+  /* Ficha que viaja por la ruta cuando encargas trabajo */
+  .ficha{
+    position:absolute;top:-9px;left:0;width:18px;height:18px;border-radius:50%;
+    background:var(--tinta);border:3px solid var(--papel);
+    opacity:0;pointer-events:none;z-index:3;
+  }
+  .ficha.viajando{animation:recorrer 2.6s cubic-bezier(.55,.05,.35,1) forwards}
+  @keyframes recorrer{
+    0%{opacity:0;left:6%}
+    12%{opacity:1}
+    88%{opacity:1}
+    100%{opacity:0;left:94%}
+  }
+
+  /* ------------------------------------------------------------ acciones */
+  .acciones{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{
+    font-family:inherit;font-size:14px;font-weight:650;
+    border:1px solid var(--tinta);border-radius:10px;
+    padding:11px 20px;cursor:pointer;background:var(--tinta);color:var(--papel);
+    transition:transform .12s,opacity .2s,background .2s;
+  }
+  .btn:hover:not(:disabled){transform:translateY(-1px)}
+  .btn:active:not(:disabled){transform:translateY(0)}
+  .btn.secundario{background:#fff;color:var(--tinta)}
+  .btn:disabled{opacity:.42;cursor:not-allowed}
+  .btn:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{
+    outline:2.5px solid var(--tinta);outline-offset:2px;
+  }
+  .nota{font-size:13px;color:var(--tinta-media)}
+
+  /* -------------------------------------------------------------- avisos */
+  .aviso{
+    display:flex;gap:12px;align-items:flex-start;
+    border-radius:var(--r);padding:14px 16px;margin-bottom:14px;
+    font-size:14px;border:1px solid transparent;
+  }
+  .aviso b{display:block;margin-bottom:2px}
+  .aviso.alto{background:#FAE7E1;border-color:#EBC2B6;color:#7C3421}
+  .aviso.medio{background:var(--durazno);border-color:#E9BC8C;color:#7A4A1C}
+  .aviso.calma{background:var(--salvia);border-color:#B0C8A6;color:#33512B}
+  .aviso .glifo{font-family:var(--dato);font-weight:700;flex:none}
+
+  /* ---------------------------------------------------------- dos paneles */
+  .par{display:grid;grid-template-columns:1.15fr .85fr;gap:26px;align-items:start}
+
+  .banda{
+    display:flex;align-items:center;gap:14px;
+    background:var(--banda,var(--crema));
+    border-radius:11px;padding:13px 16px;margin-bottom:8px;
+  }
+  .banda .id{
+    font-family:var(--dato);font-size:12.5px;font-weight:600;
+    color:var(--tinta);min-width:88px;
+  }
+  .banda .desc{font-size:13px;color:var(--tinta-media);flex:1}
+  .banda .est{
+    font-size:12px;font-weight:700;letter-spacing:.02em;
+    display:flex;align-items:center;gap:6px;color:var(--detenido);
+  }
+  .banda .est i{width:7px;height:7px;border-radius:50%;background:currentColor;font-style:normal}
+  .banda[data-estado="activo"] .est{color:var(--activo)}
+  .banda[data-estado="arrancando"] .est{color:var(--arrancando)}
+
+  .llave{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 2px;border-bottom:1px dashed var(--linea);font-size:13.5px;
+  }
+  .llave:last-child{border-bottom:0}
+  .llave .marca{font-family:var(--dato);font-weight:700;flex:none;width:16px}
+  .llave.si .marca{color:var(--activo)}
+  .llave.no .marca{color:var(--detenido)}
+  .llave.falta .marca{color:var(--error)}
+  .llave .nombre{flex:1}
+  .llave .valor{font-family:var(--dato);font-size:12px;color:var(--tinta-media)}
+
+  /* ------------------------------------------------------------ encargar */
+  .formulario{
+    background:#fff;border:1px solid var(--linea);border-radius:var(--r);
+    padding:20px;box-shadow:var(--sombra);
+  }
+  .campos{display:grid;grid-template-columns:210px 1fr auto;gap:12px;align-items:start}
+  label.et{
+    display:block;font-family:var(--dato);font-size:10.5px;letter-spacing:.15em;
+    text-transform:uppercase;color:var(--tinta-tenue);margin-bottom:6px;
+  }
+  select,textarea{
+    width:100%;font-family:inherit;font-size:14px;color:var(--tinta);
+    background:var(--papel);border:1px solid var(--linea);border-radius:10px;
+    padding:11px 12px;resize:vertical;
+  }
+  textarea{min-height:46px;line-height:1.45}
+  .campos .btn{margin-top:23px;white-space:nowrap}
+
+  /* ------------------------------------------------------------ encargos */
+  .encargo{
+    display:flex;gap:14px;align-items:baseline;
+    padding:12px 14px;border:1px solid var(--linea);border-radius:11px;
+    background:#fff;margin-bottom:8px;
+  }
+  .encargo .tipo{
+    font-family:var(--dato);font-size:10.5px;letter-spacing:.1em;
+    background:var(--crema);border-radius:5px;padding:3px 8px;flex:none;
+  }
+  .encargo .txt{flex:1;font-size:14px}
+  .encargo .est{font-size:11.5px;font-weight:700;font-family:var(--dato)}
+  .vacio{
+    text-align:center;padding:34px 20px;border:1px dashed var(--linea);
+    border-radius:var(--r);color:var(--tinta-media);font-size:14px;
+  }
+
+  /* -------------------------------------------------------------- consola */
+  details{border:1px solid var(--linea);border-radius:var(--r);background:#fff;overflow:hidden}
+  summary{
+    cursor:pointer;padding:13px 18px;font-size:13.5px;font-weight:650;
+    list-style:none;display:flex;justify-content:space-between;align-items:center;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"▾";color:var(--tinta-tenue);transition:transform .2s}
+  details[open] summary::after{transform:rotate(180deg)}
+  pre{
+    font-family:var(--dato);font-size:12px;line-height:1.65;
+    background:#16293B;color:#CBD8E4;padding:18px;
+    max-height:330px;overflow:auto;white-space:pre-wrap;word-break:break-word;
+  }
+
+  .pie{
+    margin-top:38px;padding-top:18px;border-top:1px solid var(--linea);
+    font-family:var(--dato);font-size:11.5px;color:var(--tinta-tenue);
+    display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  }
+
+  @media (max-width:900px){
+    .ruta{grid-template-columns:repeat(3,1fr)}
+    .par{grid-template-columns:1fr}
+    .campos{grid-template-columns:1fr}
+    .campos .btn{margin-top:0;width:100%}
+    .ficha{display:none}
+  }
+  @media (max-width:560px){
+    .ruta{grid-template-columns:repeat(2,1fr)}
+    .banda{flex-wrap:wrap;gap:8px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  }
+</style>
+</head>
+<body>
+<div class="lienzo">
+
+  <header class="cabecera">
+    <div class="marca">
+      <h1>Maestro</h1>
+      <p>Panel de control · orquestador de agentes</p>
+    </div>
+    <div class="pulso" id="pulso" data-estado="detenido">
+      <span class="punto"></span><span id="pulsoTexto">Comprobando…</span>
+    </div>
+  </header>
+
+  <!-- FIRMA: el camino real que recorre un encargo por la arquitectura -->
+  <section class="seccion">
+    <div class="rotulo">La ruta de un encargo</div>
+    <div class="ruta" id="ruta">
+      <div class="ficha" id="ficha"></div>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <div id="avisos"></div>
+    <div class="acciones">
+      <button class="btn" id="btnLevantar">Levantar sistema</button>
+      <button class="btn secundario" id="btnDetener">Detener</button>
+      <a class="btn secundario" id="btnAbrir" href="http://localhost:3000" target="_blank" rel="noopener"
+         style="text-decoration:none;display:inline-block">Abrir Maestro</a>
+      <span class="nota" id="notaAccion"></span>
+    </div>
+  </section>
+
+  <section class="seccion par">
+    <div>
+      <div class="rotulo">Servicios</div>
+      <div id="servicios"></div>
+    </div>
+    <div>
+      <div class="rotulo">Configuración</div>
+      <div id="config"></div>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <div class="rotulo">Encargar trabajo</div>
+    <div class="formulario">
+      <div class="campos">
+        <div>
+          <label class="et" for="tipo">Qué agente</label>
+          <select id="tipo">
+            <option value="DIRECTOR">Director — descompone y coordina</option>
+            <option value="RESEARCH">Investigador — busca y sintetiza</option>
+            <option value="ANALYSIS">Analista — calcula con código</option>
+            <option value="PRESENTATION">Presentador — genera un PPTX</option>
+            <option value="WEBSITE">Diseñador web — crea un sitio</option>
+          </select>
+        </div>
+        <div>
+          <label class="et" for="prompt">Qué necesitas</label>
+          <textarea id="prompt" placeholder="Investiga el mercado cripto en Colombia y hazme una presentación"></textarea>
+        </div>
+        <button class="btn" id="btnEnviar">Encargar</button>
+      </div>
+      <div class="nota" id="notaEncargo" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section class="seccion">
+    <div class="rotulo">Encargos recientes</div>
+    <div id="encargos"></div>
+  </section>
+
+  <section class="seccion">
+    <details id="consola">
+      <summary>Consola de Docker<span></span></summary>
+      <pre id="salida">Sin actividad todavía. Pulsa «Levantar sistema» para construir e iniciar los contenedores.</pre>
+    </details>
+  </section>
+
+  <footer class="pie">
+    <span>maestro-sprint6 · panel local</span>
+    <span id="marcaTiempo"></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const BANDAS = ["--azul","--salvia","--crema","--durazno","--lila","--arena"];
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  const ETIQUETA = { activo:"activo", arrancando:"arrancando", detenido:"detenido", desconocido:"sin dato" };
+
+  let rutaPintada = false;
+
+  async function pedir(url, opciones) {
+    const r = await fetch(url, opciones);
+    return r.json();
+  }
+
+  /* ---------------------------------------------------------------- ruta */
+  function pintarRuta(servicios) {
+    const cont = $("ruta");
+    if (!rutaPintada) {
+      servicios.forEach((s, i) => {
+        const d = document.createElement("div");
+        d.className = "parada";
+        d.id = "parada-" + s.id;
+        d.style.setProperty("--banda", `var(${BANDAS[i % BANDAS.length]})`);
+        d.innerHTML =
+          `<div class="n">PASO ${i + 1}</div>` +
+          `<div class="titulo">${esc(s.nombre)}</div>` +
+          `<div class="detalle">${esc(s.detalle)}${s.puerto ? " · :" + s.puerto : ""}</div>` +
+          `<div class="marca-estado"><i></i><span class="txt">detenido</span></div>`;
+        cont.appendChild(d);
+      });
+      rutaPintada = true;
+    }
+    servicios.forEach((s) => {
+      const d = $("parada-" + s.id);
+      if (!d) return;
+      d.dataset.estado = s.estado;
+      d.querySelector(".txt").textContent = ETIQUETA[s.estado] || s.estado;
+    });
+  }
+
+  /* ----------------------------------------------------------- servicios */
+  function pintarServicios(servicios) {
+    $("servicios").innerHTML = servicios.map((s, i) =>
+      `<div class="banda" data-estado="${esc(s.estado)}" style="--banda:var(${BANDAS[i % BANDAS.length]})">
+         <span class="id">${esc(s.id)}</span>
+         <span class="desc">${esc(s.detalle)}</span>
+         <span class="est"><i></i>${esc(ETIQUETA[s.estado] || s.estado)}</span>
+       </div>`).join("");
+  }
+
+  /* -------------------------------------------------------- configuración */
+  function pintarConfig(cfg) {
+    const proveedor = cfg.claves.find((k) => k.clave === "LLM_PROVIDER");
+    const activo = (proveedor && proveedor.valor ? proveedor.valor : "claude").toLowerCase();
+    const necesaria = { claude:"ANTHROPIC_API_KEY", openai:"OPENAI_API_KEY", gemini:"GEMINI_API_KEY" }[activo];
+
+    $("config").innerHTML = cfg.claves.map((k) => {
+      if (k.clave === "LLM_PROVIDER") {
+        return `<div class="llave ${k.configurada ? "si" : "no"}">
+                  <span class="marca">${k.configurada ? "✓" : "·"}</span>
+                  <span class="nombre">${esc(k.etiqueta)}</span>
+                  <span class="valor">${esc(k.valor || "claude (por defecto)")}</span>
+                </div>`;
+      }
+      // Solo se marca en rojo la clave del proveedor realmente seleccionado.
+      const critica = k.clave === necesaria && !k.configurada;
+      const clase = k.configurada ? "si" : (critica ? "falta" : "no");
+      const glifo = k.configurada ? "✓" : (critica ? "!" : "·");
+      const detalle = k.configurada ? "configurada"
+                    : critica ? "requerida por el proveedor activo"
+                    : k.requerida ? "sin ella, ese agente no arranca" : "opcional";
+      return `<div class="llave ${clase}">
+                <span class="marca">${glifo}</span>
+                <span class="nombre">${esc(k.etiqueta)}</span>
+                <span class="valor">${esc(detalle)}</span>
+              </div>`;
+    }).join("");
+
+    return { activo, necesaria, cfg };
+  }
+
+  /* -------------------------------------------------------------- avisos */
+  function pintarAvisos(estado, resumenCfg) {
+    const av = [];
+    if (!estado.docker.disponible) {
+      av.push(`<div class="aviso alto"><span class="glifo">!</span>
+        <span><b>Docker no está disponible</b>${esc(estado.docker.mensaje)}
+        Sin él no se puede levantar el sistema.</span></div>`);
+    }
+    if (!resumenCfg.cfg.existe_env) {
+      av.push(`<div class="aviso medio"><span class="glifo">!</span>
+        <span><b>Falta el archivo .env</b>
+        Copia <code>.env.example</code> a <code>.env</code> y completa las claves antes de levantar.</span></div>`);
+    } else {
+      const k = resumenCfg.cfg.claves.find((x) => x.clave === resumenCfg.necesaria);
+      if (k && !k.configurada) {
+        av.push(`<div class="aviso medio"><span class="glifo">!</span>
+          <span><b>Falta la clave del proveedor activo</b>
+          Elegiste <code>${esc(resumenCfg.activo)}</code>, así que necesitas
+          <code>${esc(resumenCfg.necesaria)}</code> en el .env. Los agentes fallarán al arrancar sin ella.</span></div>`);
+      }
+    }
+    if (estado.docker.disponible && estado.api_alcanzable) {
+      av.push(`<div class="aviso calma"><span class="glifo">✓</span>
+        <span><b>Sistema en marcha</b>La API responde en el puerto 4000. Ya puedes encargar trabajo.</span></div>`);
+    }
+    $("avisos").innerHTML = av.join("");
+  }
+
+  /* -------------------------------------------------------------- pulso */
+  function pintarPulso(estado) {
+    const activos = estado.servicios.filter((s) => s.estado === "activo").length;
+    const total = estado.servicios.length;
+    const p = $("pulso");
+    let clave = "detenido", texto = `Sistema detenido · 0/${total} servicios`;
+
+    if (estado.ocupado) {
+      clave = "arrancando";
+      texto = estado.accion === "detener" ? "Deteniendo contenedores…" : "Construyendo y levantando…";
+    } else if (!estado.docker.disponible) {
+      clave = "error"; texto = "Docker no disponible";
+    } else if (activos === total && total > 0) {
+      clave = "activo"; texto = `Todo en marcha · ${activos}/${total} servicios`;
+    } else if (activos > 0) {
+      clave = "arrancando"; texto = `Parcial · ${activos}/${total} servicios`;
+    }
+    p.dataset.estado = clave;
+    $("pulsoTexto").textContent = texto;
+
+    $("btnLevantar").disabled = estado.ocupado || !estado.docker.disponible;
+    $("btnDetener").disabled = estado.ocupado || !estado.docker.disponible;
+    $("notaAccion").textContent = estado.ocupado ? "Sigue el detalle en la consola de abajo." : "";
+  }
+
+  /* ------------------------------------------------------------ encargos */
+  function pintarEncargos(lista) {
+    if (!lista.length) {
+      $("encargos").innerHTML = `<div class="vacio">Todavía no has encargado nada.
+        Levanta el sistema y pide algo arriba.</div>`;
+      return;
+    }
+    const color = { COMPLETED:"var(--activo)", FAILED:"var(--error)",
+                    PROCESSING:"var(--arrancando)", PENDING:"var(--tinta-tenue)",
+                    PARTIAL:"var(--arrancando)" };
+    $("encargos").innerHTML = lista.slice(0, 8).map((t) =>
+      `<div class="encargo">
+         <span class="tipo">${esc(t.type)}</span>
+         <span class="txt">${esc(t.prompt)}</span>
+         <span class="est" style="color:${color[t.status] || "var(--tinta-tenue)"}">${esc(t.status)}</span>
+       </div>`).join("");
+  }
+
+  /* ------------------------------------------------------------- refresco */
+  async function refrescar() {
+    try {
+      const estado = await pedir("/api/estado");
+      pintarRuta(estado.servicios);
+      pintarServicios(estado.servicios);
+      const resumen = pintarConfig(estado.configuracion);
+      pintarAvisos(estado, resumen);
+      pintarPulso(estado);
+      $("marcaTiempo").textContent = "Actualizado " + new Date().toLocaleTimeString("es-CO");
+
+      if (estado.ocupado) {
+        const s = await pedir("/api/salida");
+        $("salida").textContent = s.lineas.join("\n");
+        $("consola").open = true;
+        $("salida").scrollTop = $("salida").scrollHeight;
+      }
+      if (estado.api_alcanzable) {
+        const e = await pedir("/api/encargos");
+        pintarEncargos(e.encargos || []);
+      } else {
+        pintarEncargos([]);
+      }
+    } catch {
+      $("pulsoTexto").textContent = "El panel perdió conexión con su servidor";
+      $("pulso").dataset.estado = "error";
+    }
+  }
+
+  /* -------------------------------------------------------------- acciones */
+  $("btnLevantar").addEventListener("click", async () => {
+    $("btnLevantar").disabled = true;
+    $("consola").open = true;
+    await pedir("/api/levantar", { method:"POST" });
+    refrescar();
+  });
+
+  $("btnDetener").addEventListener("click", async () => {
+    $("btnDetener").disabled = true;
+    await pedir("/api/detener", { method:"POST" });
+    refrescar();
+  });
+
+  $("btnEnviar").addEventListener("click", async () => {
+    const tipo = $("tipo").value;
+    const prompt = $("prompt").value.trim();
+    const nota = $("notaEncargo");
+
+    if (!prompt) { nota.textContent = "Escribe qué quieres encargar."; return; }
+
+    $("btnEnviar").disabled = true;
+    nota.textContent = "Enviando…";
+    try {
+      const r = await pedir("/api/encargo", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ type:tipo, prompt })
+      });
+      if (r.ok) {
+        nota.textContent = "Encargo aceptado. Sigue su avance en el dashboard de Maestro.";
+        $("prompt").value = "";
+        const f = $("ficha");
+        f.classList.remove("viajando");
+        void f.offsetWidth;          // reinicia la animación
+        f.classList.add("viajando");
+        setTimeout(refrescar, 1200);
+      } else {
+        nota.textContent = r.error || "No se pudo crear el encargo.";
+      }
+    } catch {
+      nota.textContent = "No se pudo contactar al panel.";
+    } finally {
+      $("btnEnviar").disabled = false;
+    }
+  });
+
+  refrescar();
+  setInterval(refrescar, 4000);
+})();
+</script>
+</body>
+</html>

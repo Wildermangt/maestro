@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from './prisma/prisma.module';
 import { TasksModule } from './tasks/tasks.module';
+import { MemoryModule } from './memory/memory.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -19,6 +20,7 @@ import { AppController } from './app.controller';
     }),
     PrismaModule,
     TasksModule,
+    MemoryModule,
   ],
   controllers: [AppController],
 })

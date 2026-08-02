@@ -1,4 +1,15 @@
-# Prompt Maestro — Walking Skeleton
+# Bitácora de sprints
+
+Este documento se escribió mientras el proyecto se construía, sprint a sprint.
+Conserva las decisiones de diseño tomadas en cada etapa y los errores encontrados
+al probar, con su corrección. No está reescrito a posteriori: por eso algunas
+secciones anuncian como "siguiente paso" algo que las de más abajo ya dan por hecho.
+
+Para saber qué es el proyecto y cómo levantarlo, ver [`README.md`](README.md).
+
+---
+
+## Sprint 1 — Walking Skeleton
 
 Sprint 1: un mensaje viaja de punta a punta.
 

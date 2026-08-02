@@ -16,12 +16,26 @@ class TaskType(str, Enum):
     ANALYSIS = "ANALYSIS"
     PRESENTATION = "PRESENTATION"
     WEBSITE = "WEBSITE"
+    # Agentes añadidos para que el sistema aguante objetivos grandes:
+    EXTRACTION = "EXTRACTION"      # fuentes -> filas estructuradas
+    ENRICHMENT = "ENRICHMENT"      # visita cada sitio y completa contactos
+    VERIFICATION = "VERIFICATION"  # ¿el resultado cumple lo que se pidió?
+    DOCUMENT = "DOCUMENT"          # informe en Word
+    SPREADSHEET = "SPREADSHEET"    # libro Excel con varias hojas
+    INGEST = "INGEST"              # leer archivos aportados por el usuario
 
 
 class TaskStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     PARTIAL = "PARTIAL"
+    # El Director descompuso el objetivo y espera que el usuario apruebe
+    # el plan antes de ejecutar nada. Ninguna subtarea se ha corrido aún,
+    # así que todavía no se ha gastado presupuesto en ellas.
+    AWAITING_APPROVAL = "AWAITING_APPROVAL"
+    # La tarea se detuvo por petición del usuario. Lo ya completado se
+    # conserva y se puede reanudar.
+    CANCELLED = "CANCELLED"
 
 
 class TaskJob(BaseModel):
@@ -69,6 +83,13 @@ class AnalysisOutput(BaseModel):
     summary: str
     metrics: dict = Field(default_factory=dict)
     insights: list[str] = Field(default_factory=list)
+    # Cuando el objetivo pide una tabla o un archivo descargable, el
+    # script generado devuelve el CSV COMO TEXTO aquí, y el agente lo
+    # escribe en disco. Se hace así, y no dejando que el script escriba
+    # el archivo, para que el sandbox siga sellado: en modo Docker no
+    # tiene montado el volumen de artefactos ni filesystem escribible.
+    csv_content: Optional[str] = None
+    csv_filename: Optional[str] = None
 
 
 # --- Modelos del Agente Director (Sprint 3) ---
@@ -94,6 +115,78 @@ class SubTask(BaseModel):
     result: Optional[dict] = None
     error: Optional[str] = None
     artifacts: list[dict] = Field(default_factory=list)
+    # Marca las subtareas que añadió una ronda de replanificación, para
+    # distinguirlas del plan original al mostrar el árbol al usuario.
+    ronda: int = 0
+
+
+# --- Agente Extractor ---
+
+class ExtractionOutput(BaseModel):
+    """
+    Filas estructuradas extraídas de fuentes. Es la pieza que faltaba
+    entre el Investigador (que devuelve prosa) y el Analista (que
+    necesita datos tabulares): sin esto, el Analista tenía que
+    re-deducir las filas a partir de un resumen narrativo.
+    """
+    columns: list[str] = Field(default_factory=list)
+    rows: list[dict] = Field(default_factory=list)
+    summary: str = ""
+    # Cuántas filas pedía el objetivo, si lo decía. Permite al
+    # Verificador comparar contra lo realmente extraído.
+    expected_count: Optional[int] = None
+
+
+# --- Agente Verificador ---
+
+class VerificationGap(BaseModel):
+    """Algo que falta o está mal en el resultado, y cómo resolverlo."""
+    descripcion: str
+    # Instrucción autocontenida para una subtarea nueva que lo resuelva.
+    # None si el hueco no es subsanable automáticamente.
+    accion_sugerida: Optional[str] = None
+    agente_sugerido: Optional[TaskType] = None
+
+
+class VerificationOutput(BaseModel):
+    """Veredicto del Verificador sobre si se cumplió el objetivo."""
+    cumple: bool
+    puntaje: float = 0.0  # 0.0 a 1.0
+    resumen: str = ""
+    huecos: list[VerificationGap] = Field(default_factory=list)
+
+
+# --- Agentes de documento y hoja de cálculo ---
+
+class DocumentOutput(BaseModel):
+    summary: str
+    section_count: int = 0
+
+
+class SheetSpec(BaseModel):
+    """Una hoja del libro Excel."""
+    name: str
+    columns: list[str] = Field(default_factory=list)
+    rows: list[list] = Field(default_factory=list)
+
+
+class SpreadsheetPlan(BaseModel):
+    filename: str = "datos.xlsx"
+    sheets: list[SheetSpec] = Field(default_factory=list)
+
+
+class SpreadsheetOutput(BaseModel):
+    summary: str
+    sheet_count: int = 0
+    total_rows: int = 0
+
+
+# --- Agente de ingesta ---
+
+class IngestOutput(BaseModel):
+    summary: str
+    files_read: list[str] = Field(default_factory=list)
+    content: str = ""
 
 
 class DirectorPlan(BaseModel):

@@ -1,0 +1,28 @@
+# Sandbox real del Analista — solo Linux.
+#
+# Activa el montaje del socket de Docker del host, que permite al worker
+# lanzar contenedores efímeros para ejecutar el código que genera el LLM
+# (ver workers/tools/code_executor.py).
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d
+#
+# NO lo uses en Docker Desktop sobre Windows o macOS: el contenedor del
+# worker se queda atascado en estado "Created" y el daemon deja de poder
+# crear o eliminar contenedores hasta reiniciar el backend de WSL.
+# Verificado el 31/07/2026 con Docker 29.6.2 sobre WSL2.
+#
+# Sin este archivo, el Analista sigue funcionando con el sandbox de
+# subproceso aislado: mismo timeout estricto y sin acceso a las variables
+# de entorno del worker, pero sin aislamiento de red ni de filesystem.
+#
+# ⚠️ Seguridad: montar el socket da al worker control del daemon Docker
+# del host. Está mitigado limitando lo que el contenedor HIJO puede hacer
+# (sin red, sin privilegios, memoria limitada, filesystem de solo
+# lectura), pero sigue siendo un punto de confianza. Léelo completo en
+# workers/tools/code_executor.py antes de usarlo fuera de desarrollo local.
+
+services:
+  worker:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

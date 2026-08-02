@@ -27,8 +27,11 @@ services:
       timeout: 5s
       retries: 10
 
+  # Cache semantico. Opcional: sin el, el Investigador simplemente no
+  # reutiliza investigaciones previas. Se levanta con --profile completo.
   qdrant:
     image: qdrant/qdrant:v1.12.1
+    profiles: ["completo"]
     restart: unless-stopped
     ports:
       - "6333:6333"
@@ -81,10 +84,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      qdrant:
-        condition: service_started
       sandbox-image:
         condition: service_completed_successfully
+      # Qdrant NO se declara como dependencia: está en el perfil "completo"
+      # y Compose rechaza depender de un servicio que puede no existir.
+      # El worker ya lo maneja — ResearcherAgent envuelve la creación del
+      # caché en try/except y sigue sin él (ver agents/researcher.py).
     environment:
       REDIS_URL: ${REDIS_URL}
       QUEUE_NAME: tasks-queue
@@ -92,10 +97,36 @@ services:
       QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY}
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # Proveedor de LLM y sus claves. Sin LLM_PROVIDER y GEMINI_API_KEY
+      # aquí, el worker no las ve aunque estén en el .env: Compose solo
+      # pasa al contenedor las variables listadas explícitamente.
+      LLM_PROVIDER: ${LLM_PROVIDER:-claude}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Overrides opcionales de modelo. Llegan como cadena vacía si no
+      # están en el .env; llm_factory.py usa `os.getenv(x) or "default"`
+      # justamente para tratar "" igual que ausente.
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       VERCEL_TOKEN: ${VERCEL_TOKEN:-}
       ARTIFACTS_DIR: /app/artifacts
+      # Carpeta que el agente de Ingesta puede leer. Es la ÚNICA ruta
+      # desde la que lee: toda ruta se resuelve y se verifica que quede
+      # dentro (ver agents/ingest.py). Coloca ahí los archivos que
+      # quieras que el sistema procese.
+      INGEST_DIR: /app/ingest
+      # Topes de expansión y consumo por tarea (ver workers/config.py).
+      # Sin valor, se usan los defaults del código.
+      MAX_LLM_CALLS_PER_TASK: ${MAX_LLM_CALLS_PER_TASK:-}
+      MAX_SUBTASKS_PER_TASK: ${MAX_SUBTASKS_PER_TASK:-}
+      MAX_SUBTASKS_PER_PLAN: ${MAX_SUBTASKS_PER_PLAN:-}
+      MAX_DECOMPOSITION_DEPTH: ${MAX_DECOMPOSITION_DEPTH:-}
+      MAX_VERIFICATION_ROUNDS: ${MAX_VERIFICATION_ROUNDS:-}
+      TASK_TIMEOUT_SECONDS: ${TASK_TIMEOUT_SECONDS:-}
+      REQUIRE_PLAN_APPROVAL: ${REQUIRE_PLAN_APPROVAL:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
@@ -109,11 +140,31 @@ services:
       OUTLOOK_POLL_INTERVAL_SECONDS: ${OUTLOOK_POLL_INTERVAL_SECONDS:-}
       BACKEND_INTERNAL_URL: http://backend:4000
     volumes:
-      # Monta el socket del Docker del HOST dentro del worker, para que
-      # pueda lanzar contenedores hermanos efímeros (sandbox del Analista).
-      # Ver la nota de seguridad extensa en workers/tools/code_executor.py
-      # antes de llevar esto a un entorno multi-tenant o de producción.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # NOTA: el montaje del socket del Docker del HOST
+      # (/var/run/docker.sock), que permite al worker lanzar contenedores
+      # hermanos efímeros para el sandbox del Analista, ya NO está aquí.
+      # Vive en docker-compose.linux.yml y se activa explícitamente:
+      #
+      #   docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d
+      #
+      # Por qué se sacó del arranque por defecto:
+      #   1. En Docker Desktop sobre Windows/WSL2 ese montaje deja el
+      #      contenedor atascado en estado "Created" y wedgea el daemon:
+      #      deja de poder crear o eliminar contenedores, y hay que
+      #      reiniciar el backend de WSL para recuperarlo. Verificado el
+      #      31/07/2026 en Docker 29.6.2.
+      #   2. Es un montaje sensible: da al worker control del daemon del
+      #      host. Que sea opt-in explícito es lo correcto, no lo normal.
+      #
+      # Sin el socket, code_executor.py degrada solo al sandbox de
+      # subproceso aislado (sin env vars, con timeout estricto). El
+      # Analista sigue funcionando; pierde el aislamiento de red y
+      # filesystem que da el contenedor.
+      #
+      # Carpeta de entrada del agente de Ingesta: pon aquí tus PDF,
+      # Excel o CSV. Se monta de solo lectura (:ro) para que ningún
+      # agente pueda modificar ni borrar tus archivos originales.
+      - ./ingest:/app/ingest:ro
       # Compartido con el backend: artefactos generados (PPTX, etc.) que
       # el worker escribe y NestJS sirve para descarga. En Sprint 5 esto
       # se reemplaza por MinIO/S3 real (ver documento original) sin que
@@ -121,7 +172,10 @@ services:
       # archivo, no cómo Artifact.url lo referencia.
       - artifacts_data:/app/artifacts
 
+  # Dashboard Next.js. Opcional: el panel local (panel/) cubre lo mismo
+  # sin construir una imagen de 356MB. Se levanta con --profile completo.
   frontend:
+    profiles: ["completo"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
