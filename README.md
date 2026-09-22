@@ -16,17 +16,10 @@ y 1.590 de TypeScript.**
 
 ## Cómo está montado
 
-```
-Next.js  ──POST /api/tasks──▶  NestJS  ──BullMQ──▶  Redis
-   ▲                             │                    │
-   └────── WebSocket ────────────┘                    ▼
-                                              Worker (Python)
-                                                     │
-                            ┌────────────────────────┼────────────────────┐
-                            ▼                        ▼                    ▼
-                        Postgres                  Qdrant          Contenedor efímero
-                     (estado, memoria)       (caché semántico)     (ejecuta código)
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/arquitectura-dark.svg">
+  <img alt="Arquitectura de servicios de Maestro" src="docs/arquitectura-light.svg">
+</picture>
 
 | Servicio | Papel |
 |---|---|
@@ -102,6 +95,11 @@ controlan por variables de entorno y están en `workers/config.py`.
 
 Además del navegador, acepta tareas por **Telegram**, **Gmail** y **Outlook**, con
 lista de remitentes autorizados (`workers/channels/`).
+
+Los tres **no encolan en Redis por su cuenta**: llaman al mismo `POST /api/tasks`
+que usa el navegador. Así la creación de una tarea ocurre en un solo sitio —crear la
+fila en Postgres, encolar en BullMQ y notificar— y añadir un canal nuevo no obliga a
+repetir esa lógica ni a mantenerla sincronizada en cuatro lugares.
 
 ## Nota sobre el historial
 

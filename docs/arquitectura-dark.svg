@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 890" width="1060" height="890" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<defs><marker id="pf" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#8b949e"/></marker><marker id="pfO" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#a371f7"/></marker><marker id="pfR" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#f85149"/></marker><marker id="pfG" markerWidth="9" markerHeight="9" refX="8.5" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#3fb950"/></marker></defs>
+<rect width="1060" height="890" fill="#0d1117"/>
+<text x="40" y="44" text-anchor="start" font-size="21" fill="#e6edf3" font-weight="600">Maestro · arquitectura de servicios</text>
+<text x="40" y="68" text-anchor="start" font-size="13.5" fill="#9198a1">Siete servicios en Docker Compose. Una sola puerta de entrada y una sola cola.</text>
+<rect x="70" y="110" width="250" height="72" rx="10" fill="#121d2f" stroke="#4493f8" stroke-width="1.8"/><text x="195.0" y="140.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Navegador</text><text x="195.0" y="162.0" text-anchor="middle" font-size="12.5" fill="#9198a1">Next.js · React</text>
+<rect x="560" y="110" width="330" height="72" rx="10" fill="#121d2f" stroke="#4493f8" stroke-width="1.8"/><text x="725.0" y="132.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Canales externos</text><text x="725.0" y="154.0" text-anchor="middle" font-size="12.5" fill="#9198a1">Telegram · Gmail · Outlook</text><text x="725.0" y="171.0" text-anchor="middle" font-size="12.5" fill="#9198a1">con remitentes autorizados</text>
+<rect x="250" y="272" width="300" height="78" rx="10" fill="#121d2f" stroke="#4493f8" stroke-width="1.8"/><text x="400.0" y="305.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">backend</text><text x="400.0" y="327.0" text-anchor="middle" font-size="12.5" fill="#9198a1">NestJS · REST + WebSocket</text>
+<path d="M 180 186 L 298 268" stroke="#8b949e" stroke-width="1.9" fill="none" marker-end="url(#pf)"/>
+<text x="78" y="238" text-anchor="start" font-size="12" fill="#8b949e" font-weight="600">POST /api/tasks</text>
+<path d="M 340 268 L 262 186" stroke="#8b949e" stroke-width="1.9" fill="none" marker-end="url(#pf)"/>
+<text x="360" y="232" text-anchor="start" font-size="12" fill="#8b949e" font-weight="600">WebSocket</text>
+<text x="360" y="248" text-anchor="start" font-size="11.5" fill="#8b949e">árbol en vivo</text>
+<path d="M 672 186 L 512 268" stroke="#8b949e" stroke-width="1.9" fill="none" marker-end="url(#pf)"/>
+<text x="700" y="228" text-anchor="start" font-size="12" fill="#8b949e">el mismo endpoint</text>
+<text x="700" y="244" text-anchor="start" font-size="12" fill="#8b949e">que usa el navegador</text>
+<rect x="730" y="272" width="260" height="78" rx="10" fill="#0d2818" stroke="#3fb950" stroke-width="1.8"/><text x="860.0" y="297.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">PostgreSQL</text><text x="860.0" y="319.0" text-anchor="middle" font-size="12.5" fill="#9198a1">estado de tareas</text><text x="860.0" y="336.0" text-anchor="middle" font-size="12.5" fill="#9198a1">memoria de entidades</text>
+<path d="M 556 305 L 724 305" stroke="#3fb950" stroke-width="1.9" fill="none" marker-end="url(#pfG)"/>
+<path d="M 724 325 L 556 325" stroke="#3fb950" stroke-width="1.9" fill="none" marker-end="url(#pfG)"/>
+<text x="640" y="288" text-anchor="middle" font-size="12" fill="#3fb950" font-weight="600">Prisma</text>
+<rect x="250" y="424" width="300" height="74" rx="10" fill="#2d1214" stroke="#f85149" stroke-width="1.8"/><text x="400.0" y="455.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Redis</text><text x="400.0" y="477.0" text-anchor="middle" font-size="12.5" fill="#9198a1">cola BullMQ · tasks-queue</text>
+<path d="M 330 354 L 330 420" stroke="#f85149" stroke-width="1.9" fill="none" marker-end="url(#pfR)"/>
+<path d="M 470 420 L 470 354" stroke="#f85149" stroke-width="1.9" fill="none" marker-end="url(#pfR)"/>
+<text x="296" y="394" text-anchor="end" font-size="12" fill="#f85149" font-weight="600">encola</text>
+<text x="504" y="394" text-anchor="start" font-size="12" fill="#f85149" font-weight="600">resultado</text>
+<rect x="160" y="572" width="480" height="122" rx="10" fill="#121d2f" stroke="#4493f8" stroke-width="1.8"/><text x="400.0" y="611.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">worker · Python</text><text x="400.0" y="633.0" text-anchor="middle" font-size="12.5" fill="#9198a1">El Director descompone la tarea y delega en 10 agentes</text><text x="400.0" y="650.0" text-anchor="middle" font-size="12.5" fill="#9198a1">researcher · analyst · extractor · enricher · verifier</text><text x="400.0" y="667.0" text-anchor="middle" font-size="12.5" fill="#9198a1">writer · presenter · spreadsheet · designer · ingest</text>
+<path d="M 330 502 L 330 568" stroke="#f85149" stroke-width="1.9" fill="none" marker-end="url(#pfR)"/>
+<path d="M 470 568 L 470 502" stroke="#f85149" stroke-width="1.9" fill="none" marker-end="url(#pfR)"/>
+<text x="296" y="542" text-anchor="end" font-size="12" fill="#f85149" font-weight="600">brpoplpush</text>
+<text x="504" y="542" text-anchor="start" font-size="12" fill="#f85149" font-weight="600">resultado</text>
+<rect x="730" y="578" width="260" height="76" rx="10" fill="#211433" stroke="#a371f7" stroke-width="1.8" stroke-dasharray="7 5"/><text x="860.0" y="602.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Qdrant</text><text x="860.0" y="624.0" text-anchor="middle" font-size="12.5" fill="#9198a1">caché semántico</text><text x="860.0" y="641.0" text-anchor="middle" font-size="12.5" fill="#9198a1">perfil «completo»</text>
+<path d="M 646 612 L 724 612" stroke="#a371f7" stroke-width="1.9" fill="none" marker-end="url(#pfO)" stroke-dasharray="6 5"/>
+<text x="860" y="676" text-anchor="middle" font-size="11.5" fill="#a371f7">opcional: si no está, el investigador sigue</text>
+<rect x="160" y="750" width="480" height="104" rx="10" fill="#2d1214" stroke="#f85149" stroke-width="1.8"/><text x="400.0" y="780.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Contenedor efímero</text><text x="400.0" y="802.0" text-anchor="middle" font-size="12.5" fill="#f85149">sin red · sin privilegios de kernel · raíz de solo lectura</text><text x="400.0" y="819.0" text-anchor="middle" font-size="12.5" fill="#f85149">límite de memoria y de tiempo</text><text x="400.0" y="836.0" text-anchor="middle" font-size="12.5" fill="#9198a1">uno nuevo por ejecución, y se borra al terminar</text>
+<path d="M 400 698 L 400 746" stroke="#f85149" stroke-width="1.9" fill="none" marker-end="url(#pfR)"/>
+<text x="414" y="726" text-anchor="start" font-size="11.5" fill="#f85149" font-weight="600">ejecuta el código que genera</text>
+<rect x="730" y="744" width="260" height="84" rx="10" fill="#0d2818" stroke="#3fb950" stroke-width="1.8"/><text x="860.0" y="764.0" text-anchor="middle" font-size="16.5" font-weight="600" fill="#e6edf3">Volumen compartido</text><text x="860.0" y="786.0" text-anchor="middle" font-size="12.5" fill="#9198a1">artifacts_data</text><text x="860.0" y="803.0" text-anchor="middle" font-size="12.5" fill="#9198a1">lo escribe el worker,</text><text x="860.0" y="820.0" text-anchor="middle" font-size="12.5" fill="#9198a1">lo sirve el backend</text>
+<path d="M 646 686 L 724 760" stroke="#3fb950" stroke-width="1.9" fill="none" marker-end="url(#pfG)"/>
+</svg>
